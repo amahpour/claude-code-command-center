@@ -88,19 +88,27 @@ def parse_git_remote(project_path: str) -> dict | None:
     if not url:
         return None
 
-    # SSH: git@github.com:owner/repo.git
-    m = re.match(r"git@([^:]+):([^/]+)/([^/]+?)(?:\.git)?$", url)
+    # SSH: git@host:path/to/repo.git (path can have multiple segments for GitLab groups)
+    m = re.match(r"git@([^:]+):(.+?)(?:\.git)?$", url)
     if m:
-        host, owner, repo = m.group(1), m.group(2), m.group(3)
+        host = m.group(1)
+        full_path = m.group(2)
     else:
-        # HTTPS: https://github.com/owner/repo.git
-        m = re.match(r"https?://([^/]+)/([^/]+)/([^/]+?)(?:\.git)?$", url)
+        # HTTPS: https://host/path/to/repo.git
+        m = re.match(r"https?://([^/]+)/(.+?)(?:\.git)?$", url)
         if not m:
             return None
-        host, owner, repo = m.group(1), m.group(2), m.group(3)
+        host = m.group(1)
+        full_path = m.group(2)
+
+    # Split into owner and repo (last segment is repo, everything before is owner/group)
+    parts = full_path.rsplit("/", 1)
+    if len(parts) != 2:
+        return None
+    owner, repo = parts
 
     platform = "gitlab" if "gitlab" in host.lower() else "github"
-    return {"host": host, "owner": owner, "repo": repo, "platform": platform}
+    return {"host": host, "owner": owner, "repo": repo, "full_path": full_path, "platform": platform}
 
 
 async def find_pr_url(project_path: str, branch: str) -> str | None:
@@ -146,8 +154,7 @@ async def _find_github_pr(remote: dict, branch: str) -> str | None:
 async def _find_gitlab_mr(remote: dict, branch: str) -> str | None:
     """Query GitLab API for an open MR on the given branch."""
     client = _get_client()
-    owner, repo = remote["owner"], remote["repo"]
-    project_id = quote(f"{owner}/{repo}", safe="")
+    project_id = quote(remote["full_path"], safe="")
     url = f"https://{remote['host']}/api/v4/projects/{project_id}/merge_requests"
     params = {"source_branch": branch, "state": "opened", "per_page": 1}
 

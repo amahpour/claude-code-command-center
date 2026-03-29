@@ -355,7 +355,8 @@ body {
 
 .card-footer {
   display: flex;
-  justify-content: space-between;
+  flex-wrap: wrap;
+  gap: 6px;
   align-items: center;
   font-size: 12px;
   color: var(--text-dim);
