@@ -25,7 +25,8 @@
         </div>
       </div>
       <div class="topbar-actions">
-        <button class="btn btn-primary" id="new-session-btn">+ New Session</button>
+        <!-- New Session disabled — see GitHub issue #4 -->
+        <!-- <button class="btn btn-primary" id="new-session-btn">+ New Session</button> -->
       </div>
     </header>
 
@@ -70,23 +71,7 @@
       <div class="terminal-container" id="terminal-container"></div>
     </div>
 
-    <!-- New Session Modal -->
-    <div class="modal-overlay" id="new-session-modal" style="display:none">
-      <div class="modal">
-        <h2>Start a New Session</h2>
-        <p style="color: var(--text-secondary); line-height: 1.6; margin-bottom: 16px;">
-          Open a terminal and run <code>claude</code> in any project directory.
-          It will appear on this dashboard automatically via hooks.
-        </p>
-        <pre style="background: var(--surface-0); border: 1px solid var(--border); border-radius: var(--radius); padding: 12px; font-size: 13px; color: var(--text-secondary); margin-bottom: 16px;"><code>cd /path/to/your/project
-claude</code></pre>
-        <p style="color: var(--text-dim); font-size: 12px; margin-bottom: 16px;">
-          Make sure hooks are installed: <code>bash scripts/setup.sh</code>
-        </p>
-        <div class="modal-actions">
-          <button class="btn" id="modal-cancel">Close</button>
-        </div>
-      </div>
+    <!-- New Session Modal — disabled, see GitHub issue #4 -->
     </div>
   </div>
 

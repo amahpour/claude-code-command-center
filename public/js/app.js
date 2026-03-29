@@ -70,18 +70,8 @@ const App = {
     window.history.pushState({ view }, '', `#${view}`);
   },
 
-  // ---- Modal ----
-  setupModal() {
-    const modal = document.getElementById('new-session-modal');
-    const btn = document.getElementById('new-session-btn');
-    const cancel = document.getElementById('modal-cancel');
-
-    btn.addEventListener('click', () => { modal.style.display = 'flex'; });
-    cancel.addEventListener('click', () => { modal.style.display = 'none'; });
-    modal.addEventListener('click', (e) => {
-      if (e.target === modal) modal.style.display = 'none';
-    });
-  },
+  // ---- Modal (disabled — see GitHub issue #4) ----
+  setupModal() {},
 
   setupFolderPicker() {
     const browseBtn = document.getElementById('browse-btn');
