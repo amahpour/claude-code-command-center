@@ -4,6 +4,7 @@
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>Claude Code Command Center</title>
+  <link rel="icon" type="image/svg+xml" href="/logo.svg">
   <link rel="stylesheet" href="/css/style.css">
   <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/xterm@5.3.0/css/xterm.css">
 </head>
@@ -12,6 +13,7 @@
     <!-- Top Bar -->
     <header class="topbar">
       <div class="topbar-left">
+        <img class="topbar-logo" src="/logo.svg" alt="" width="32" height="32">
         <h1 class="topbar-title">Claude Code Command Center</h1>
       </div>
       <div class="topbar-stats">
@@ -25,7 +27,7 @@
         </div>
       </div>
       <div class="topbar-actions">
-        <button class="btn btn-primary" id="new-session-btn">+ New Session</button>
+        <button class="btn btn-sm" id="settings-btn" title="Settings">&#9881; Settings</button>
       </div>
     </header>
 
@@ -70,39 +72,41 @@
       <div class="terminal-container" id="terminal-container"></div>
     </div>
 
-    <!-- New Session Modal -->
-    <div class="modal-overlay" id="new-session-modal" style="display:none">
-      <div class="modal modal-wide">
-        <h2>New Session</h2>
-        <div class="form-group">
-          <label for="project-dir">Project Directory</label>
-          <div class="input-with-btn">
-            <input type="text" id="project-dir" placeholder="/path/to/project" class="input">
-            <button class="btn btn-sm" id="browse-btn">Browse</button>
-          </div>
+    <!-- Inline Edit Modal -->
+    <div class="modal-overlay" id="inline-edit-modal" style="display:none">
+      <div class="modal modal-sm">
+        <h3 id="inline-edit-title">Edit</h3>
+        <input type="text" class="input" id="inline-edit-input" />
+        <div class="modal-actions">
+          <button class="btn" id="inline-edit-cancel">Cancel</button>
+          <button class="btn btn-primary" id="inline-edit-save">Save</button>
         </div>
-        <div class="folder-picker" id="folder-picker" style="display:none">
-          <div class="folder-picker-header">
-            <button class="btn btn-sm" id="folder-up">&uarr; Up</button>
-            <span class="folder-picker-path" id="folder-picker-path">~</span>
-          </div>
-          <div class="folder-picker-list" id="folder-picker-list"></div>
-          <div class="folder-picker-actions">
-            <button class="btn btn-sm btn-primary" id="folder-select">Select this folder</button>
-          </div>
+      </div>
+    </div>
+
+    <!-- Settings Modal -->
+    <div class="modal-overlay" id="settings-modal" style="display:none">
+      <div class="modal">
+        <h2>Settings</h2>
+        <div class="form-group">
+          <label for="jira-keys">Jira Project Keys (comma-separated)</label>
+          <input type="text" class="input" id="jira-keys" placeholder="CIT, PLAT, INFRA" />
+          <small class="form-hint">The prefix before the dash in ticket IDs (e.g., <strong>CIT</strong> from CIT-42). Find these in your Jira project settings or board URL.</small>
         </div>
         <div class="form-group">
-          <label for="session-prompt">Initial Prompt (optional)</label>
-          <textarea id="session-prompt" placeholder="What should Claude work on?" class="input textarea"></textarea>
+          <label for="jira-url">Jira Server URL</label>
+          <input type="text" class="input" id="jira-url" placeholder="https://company.atlassian.net" />
+          <small class="form-hint">Your Atlassian Cloud URL or self-hosted Jira base URL. Ticket IDs will link to <code>{url}/browse/CIT-42</code>.</small>
         </div>
         <div class="modal-actions">
-          <button class="btn" id="modal-cancel">Cancel</button>
-          <button class="btn btn-primary" id="modal-launch">Launch</button>
+          <button class="btn" id="settings-cancel">Cancel</button>
+          <button class="btn btn-primary" id="settings-save">Save</button>
         </div>
       </div>
     </div>
   </div>
 
+  <script src="https://cdn.jsdelivr.net/npm/marked@15.0.7/marked.min.js"></script>
   <script src="https://cdn.jsdelivr.net/npm/xterm@5.3.0/lib/xterm.js"></script>
   <script src="https://cdn.jsdelivr.net/npm/xterm-addon-fit@0.8.0/lib/xterm-addon-fit.js"></script>
   <script src="https://cdn.jsdelivr.net/npm/xterm-addon-web-links@0.9.0/lib/xterm-addon-web-links.js"></script>

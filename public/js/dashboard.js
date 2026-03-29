@@ -35,9 +35,14 @@ const Dashboard = {
     card.dataset.sessionId = session.id;
     card.innerHTML = this._cardHTML(session);
     card.addEventListener('click', () => {
+      const title = session.project_name || session.id;
       if (typeof Terminal !== 'undefined') {
-        Terminal.open(session.id, session.project_name || session.id);
+        Terminal.open(session.id, title);
       }
+      window.history.pushState(
+        { view: 'session', sessionId: session.id, sessionTitle: title },
+        '', `#session/${session.id}`
+      );
     });
     return card;
   },
@@ -76,7 +81,25 @@ const Dashboard = {
 
     let prLink = '';
     if (s.pr_url) {
-      prLink = `<a href="${this._escapeHTML(s.pr_url)}" class="card-pr-link" target="_blank" onclick="event.stopPropagation()">PR &rarr;</a>`;
+      const url = s.pr_url;
+      const isGitLab = url.includes('gitlab');
+      const label = isGitLab ? 'MR' : 'PR';
+      // Extract short ref (e.g., #42) from URL
+      const match = url.match(/\/(?:pull|merge_requests)\/(\d+)/);
+      const ref = match ? `${label} #${match[1]}` : `${label} &rarr;`;
+      prLink = `<a href="${this._escapeHTML(url)}" class="card-pr-tag" target="_blank" onclick="event.stopPropagation()">${ref}</a>`;
+    }
+
+    let ticketTag = '';
+    if (s.ticket_id) {
+      const jiraUrl = (App.settings && App.settings.jira_server_url) || '';
+      if (jiraUrl) {
+        ticketTag = `<a href="${this._escapeHTML(jiraUrl)}/browse/${this._escapeHTML(s.ticket_id)}" class="card-ticket-link" target="_blank" onclick="event.stopPropagation()">${this._escapeHTML(s.ticket_id)}</a>`;
+      } else {
+        ticketTag = `<span class="card-ticket-tag">${this._escapeHTML(s.ticket_id)}</span>`;
+      }
+    } else {
+      ticketTag = `<span class="card-ticket-tag empty">No ticket</span>`;
     }
 
     const sessionName = s.session_name ? `<div class="card-session-name">${this._escapeHTML(s.session_name)}</div>` : '';
@@ -85,10 +108,13 @@ const Dashboard = {
     // Friendly model name
     const modelShort = model.replace('claude-', '').replace('-4-6', ' 4.6').replace('-4-5', ' 4.5');
 
+    const displayTitle = s.display_name || s.project_name || s.id;
+    const projectPath = s.project_path ? s.project_path.replace(/^\/Users\/[^/]+\//, '~/') : '';
+
     return `
       <div class="card-header">
         <span class="status-dot ${status}"></span>
-        <span class="card-project">${this._escapeHTML(s.project_name || s.id)}</span>
+        <span class="card-project" onclick="event.stopPropagation(); Dashboard.editDisplayName('${this._escapeHTML(s.id)}', '${this._escapeHTML(displayTitle)}')" title="Click to rename">${this._escapeHTML(displayTitle)}</span>
         <span class="card-status-label ${status}">${status}</span>
       </div>
       ${sessionName}
@@ -108,9 +134,16 @@ const Dashboard = {
         </div>
       </div>
       <div class="card-footer">
-        <span class="card-cost">$${(s.cost_usd || 0).toFixed(4)}</span>
-        <span>${duration}</span>
-        ${prLink}
+        <span class="card-footer-left">
+          <span class="card-cost">$${(s.cost_usd || 0).toFixed(4)}</span>
+          <span>${duration}</span>
+          <span class="card-ticket-area">
+            ${ticketTag}
+            <button class="card-ticket-edit" onclick="event.stopPropagation(); Dashboard.editTicketId('${this._escapeHTML(s.id)}', '${this._escapeHTML(s.ticket_id || '')}')" title="Edit ticket ID">&#9998;</button>
+          </span>
+          ${prLink}
+        </span>
+        ${projectPath ? `<span class="card-path" title="${this._escapeHTML(s.project_path)}">${this._escapeHTML(projectPath)}</span>` : ''}
       </div>
     `;
   },
@@ -127,6 +160,78 @@ const Dashboard = {
     } catch {
       return '-';
     }
+  },
+
+  _inlineEdit(title, currentValue, onSave) {
+    const modal = document.getElementById('inline-edit-modal');
+    const input = document.getElementById('inline-edit-input');
+    const titleEl = document.getElementById('inline-edit-title');
+    const saveBtn = document.getElementById('inline-edit-save');
+    const cancelBtn = document.getElementById('inline-edit-cancel');
+
+    titleEl.textContent = title;
+    input.value = currentValue;
+    modal.style.display = 'flex';
+    input.focus();
+    input.select();
+
+    const cleanup = () => {
+      modal.style.display = 'none';
+      saveBtn.replaceWith(saveBtn.cloneNode(true));
+      cancelBtn.replaceWith(cancelBtn.cloneNode(true));
+      input.removeEventListener('keydown', onKey);
+      modal.removeEventListener('click', onBackdrop);
+    };
+
+    const save = () => { cleanup(); onSave(input.value); };
+    const cancel = () => { cleanup(); };
+
+    const onKey = (e) => {
+      if (e.key === 'Enter') save();
+      else if (e.key === 'Escape') cancel();
+    };
+    const onBackdrop = (e) => { if (e.target === modal) cancel(); };
+
+    input.addEventListener('keydown', onKey);
+    modal.addEventListener('click', onBackdrop);
+    document.getElementById('inline-edit-save').addEventListener('click', save);
+    document.getElementById('inline-edit-cancel').addEventListener('click', cancel);
+  },
+
+  editDisplayName(sessionId, currentValue) {
+    this._inlineEdit('Rename session', currentValue, (val) => {
+      fetch(`/api/sessions/${sessionId}`, {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ display_name: val.trim() || '' }),
+      })
+      .then(r => r.json())
+      .then(data => {
+        if (data.session) {
+          App.sessions[data.session.id] = data.session;
+          this.updateCard(data.session);
+        }
+      })
+      .catch(e => console.error('Failed to rename session:', e));
+    });
+  },
+
+  editTicketId(sessionId, currentValue) {
+    this._inlineEdit('Edit ticket ID', currentValue, (val) => {
+      fetch(`/api/sessions/${sessionId}`, {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ ticket_id: val.trim().toUpperCase() || '' }),
+      })
+      .then(r => r.json())
+      .then(data => {
+        if (data.session) {
+          App.sessions[data.session.id] = data.session;
+          this.updateCard(data.session);
+        }
+      })
+      .catch(e => console.error('Failed to update ticket ID:', e));
+    });
   },
 
   _escapeHTML(str) {

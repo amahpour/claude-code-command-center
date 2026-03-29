@@ -7,13 +7,54 @@
 const App = {
   ws: null,
   sessions: {},
+  settings: {},
   currentView: 'dashboard',
 
   init() {
     this.setupNavigation();
     this.setupModal();
+    this.setupSettings();
     this.connectWebSocket();
     this.loadInitialData();
+    this.loadSettings();
+    this.setupHistory();
+  },
+
+  // ---- Browser History (back/forward) ----
+  setupHistory() {
+    // Handle back/forward buttons
+    window.addEventListener('popstate', (e) => {
+      const state = e.state || { view: 'dashboard' };
+      if (state.view === 'session' && state.sessionId) {
+        // Reopen session transcript without pushing another state
+        this._openSessionDirect(state.sessionId, state.sessionTitle);
+      } else {
+        // Close any open transcript and switch view
+        if (typeof SessionViewer !== 'undefined') SessionViewer.close();
+        this._switchViewDirect(state.view || 'dashboard');
+      }
+    });
+
+    // Set initial state
+    window.history.replaceState({ view: 'dashboard' }, '', '#dashboard');
+  },
+
+  _openSessionDirect(sessionId, title) {
+    if (typeof SessionViewer !== 'undefined') {
+      SessionViewer.open(sessionId, title);
+    }
+  },
+
+  _switchViewDirect(view) {
+    this.currentView = view;
+    document.querySelectorAll('.nav-tab').forEach(t => t.classList.remove('active'));
+    const tab = document.querySelector(`.nav-tab[data-view="${view}"]`);
+    if (tab) tab.classList.add('active');
+    document.querySelectorAll('.view').forEach(v => v.classList.remove('active'));
+    const el = document.getElementById(`view-${view}`);
+    if (el) el.classList.add('active');
+    if (view === 'history' && typeof History !== 'undefined') History.load();
+    else if (view === 'analytics' && typeof Analytics !== 'undefined') Analytics.load();
   },
 
   // ---- Navigation ----
@@ -27,73 +68,63 @@ const App = {
   },
 
   switchView(view) {
-    this.currentView = view;
+    if (typeof SessionViewer !== 'undefined') SessionViewer.close();
+    this._switchViewDirect(view);
+    window.history.pushState({ view }, '', `#${view}`);
+  },
 
-    document.querySelectorAll('.nav-tab').forEach(t => t.classList.remove('active'));
-    document.querySelector(`.nav-tab[data-view="${view}"]`).classList.add('active');
+  // ---- Modal (disabled — see GitHub issue #4) ----
+  setupModal() {},
 
-    document.querySelectorAll('.view').forEach(v => v.classList.remove('active'));
-    document.getElementById(`view-${view}`).classList.add('active');
-
-    // Trigger view-specific loading
-    if (view === 'history' && typeof History !== 'undefined') {
-      History.load();
-    } else if (view === 'analytics' && typeof Analytics !== 'undefined') {
-      Analytics.load();
+  // ---- Settings ----
+  async loadSettings() {
+    try {
+      const resp = await fetch('/api/settings');
+      const data = await resp.json();
+      this.settings = data.settings || {};
+    } catch (e) {
+      console.error('Failed to load settings:', e);
     }
   },
 
-  // ---- Modal ----
-  setupModal() {
-    const modal = document.getElementById('new-session-modal');
-    const btn = document.getElementById('new-session-btn');
-    const cancel = document.getElementById('modal-cancel');
-    const launch = document.getElementById('modal-launch');
+  setupSettings() {
+    const modal = document.getElementById('settings-modal');
+    const btn = document.getElementById('settings-btn');
+    const cancel = document.getElementById('settings-cancel');
+    const save = document.getElementById('settings-save');
 
-    btn.addEventListener('click', () => { modal.style.display = 'flex'; });
-    cancel.addEventListener('click', () => {
-      modal.style.display = 'none';
-      document.getElementById('folder-picker').style.display = 'none';
+    btn.addEventListener('click', () => {
+      const keys = this.settings.jira_project_keys || [];
+      document.getElementById('jira-keys').value = keys.join(', ');
+      document.getElementById('jira-url').value = this.settings.jira_server_url || '';
+      modal.style.display = 'flex';
     });
+
+    cancel.addEventListener('click', () => { modal.style.display = 'none'; });
     modal.addEventListener('click', (e) => {
-      if (e.target === modal) {
-        modal.style.display = 'none';
-        document.getElementById('folder-picker').style.display = 'none';
-      }
+      if (e.target === modal) modal.style.display = 'none';
     });
 
-    launch.addEventListener('click', async () => {
-      const dir = document.getElementById('project-dir').value.trim();
-      const prompt = document.getElementById('session-prompt').value.trim();
-      if (!dir) return;
-
-      launch.disabled = true;
-      launch.textContent = 'Launching...';
+    save.addEventListener('click', async () => {
+      const keysRaw = document.getElementById('jira-keys').value;
+      const keys = keysRaw.split(',').map(k => k.trim().toUpperCase()).filter(Boolean);
+      const url = document.getElementById('jira-url').value.trim();
       try {
-        const resp = await fetch('/api/sessions/new', {
-          method: 'POST',
+        const resp = await fetch('/api/settings', {
+          method: 'PUT',
           headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ project_dir: dir, prompt: prompt || null }),
+          body: JSON.stringify({
+            jira_project_keys: keys,
+            jira_server_url: url || null,
+          }),
         });
-        if (resp.ok) {
-          modal.style.display = 'none';
-          document.getElementById('project-dir').value = '';
-          document.getElementById('session-prompt').value = '';
-          document.getElementById('folder-picker').style.display = 'none';
-        } else {
-          const err = await resp.json();
-          alert('Failed: ' + (err.detail || 'Unknown error'));
-        }
+        const data = await resp.json();
+        this.settings = data.settings || {};
+        modal.style.display = 'none';
       } catch (e) {
-        console.error('Failed to launch session:', e);
-        alert('Failed to launch session');
+        console.error('Failed to save settings:', e);
       }
-      launch.disabled = false;
-      launch.textContent = 'Launch';
     });
-
-    // Folder picker
-    this.setupFolderPicker();
   },
 
   setupFolderPicker() {

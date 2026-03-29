@@ -30,6 +30,7 @@ const History = {
             <tr>
               <th>Project</th>
               <th>Branch</th>
+              <th>Ticket</th>
               <th>Model</th>
               <th>Status</th>
               <th>Cost</th>
@@ -101,7 +102,7 @@ const History = {
   renderTable(sessions) {
     const tbody = document.getElementById('history-tbody');
     if (!sessions.length) {
-      tbody.innerHTML = `<tr><td colspan="6" style="text-align:center;color:var(--text-muted);padding:40px">No sessions found</td></tr>`;
+      tbody.innerHTML = `<tr><td colspan="7" style="text-align:center;color:var(--text-muted);padding:40px">No sessions found</td></tr>`;
       return;
     }
 
@@ -109,6 +110,7 @@ const History = {
       <tr data-session-id="${this._esc(s.id)}">
         <td><strong>${this._esc(s.project_name || s.id)}</strong></td>
         <td>${this._esc(s.git_branch || '-')}</td>
+        <td>${this._renderTicket(s.ticket_id)}</td>
         <td>${this._esc(s.model || '-')}</td>
         <td><span class="card-status-label ${s.status}">${s.status}</span></td>
         <td>$${(s.cost_usd || 0).toFixed(4)}</td>
@@ -126,7 +128,7 @@ const History = {
   renderSearchResults(results, query) {
     const tbody = document.getElementById('history-tbody');
     if (!results.length) {
-      tbody.innerHTML = `<tr><td colspan="6" style="text-align:center;color:var(--text-muted);padding:40px">No results for "${this._esc(query)}"</td></tr>`;
+      tbody.innerHTML = `<tr><td colspan="7" style="text-align:center;color:var(--text-muted);padding:40px">No results for "${this._esc(query)}"</td></tr>`;
       return;
     }
 
@@ -229,6 +231,15 @@ const History = {
     try {
       return new Date(dateStr).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', second: '2-digit' });
     } catch { return ''; }
+  },
+
+  _renderTicket(ticketId) {
+    if (!ticketId) return '-';
+    const jiraUrl = (App.settings && App.settings.jira_server_url) || '';
+    if (jiraUrl) {
+      return `<a href="${this._esc(jiraUrl)}/browse/${this._esc(ticketId)}" target="_blank" onclick="event.stopPropagation()">${this._esc(ticketId)}</a>`;
+    }
+    return this._esc(ticketId);
   },
 
   _esc(str) {

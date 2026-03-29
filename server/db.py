@@ -97,10 +97,16 @@ async def _create_tables(db: aiosqlite.Connection):
             created_at TEXT DEFAULT (datetime('now')),
             FOREIGN KEY (session_id) REFERENCES sessions(id)
         );
+
+        CREATE TABLE IF NOT EXISTS settings (
+            key TEXT PRIMARY KEY,
+            value TEXT NOT NULL,
+            updated_at TEXT DEFAULT (datetime('now'))
+        );
     """)
 
     # Add columns that may not exist in older databases
-    for col, col_type in [("session_name", "TEXT"), ("effort_level", "TEXT")]:
+    for col, col_type in [("session_name", "TEXT"), ("effort_level", "TEXT"), ("ticket_id", "TEXT"), ("display_name", "TEXT")]:
         try:
             await db.execute(f"ALTER TABLE sessions ADD COLUMN {col} {col_type}")
         except Exception:
@@ -363,3 +369,31 @@ async def get_analytics_daily(days: int = 30) -> list[dict]:
     )
     rows = await cursor.fetchall()
     return [dict(r) for r in rows]
+
+
+# --- Settings ---
+
+async def get_setting(key: str) -> str | None:
+    """Get a single setting value by key."""
+    db = await get_db()
+    cursor = await db.execute("SELECT value FROM settings WHERE key = ?", (key,))
+    row = await cursor.fetchone()
+    return row["value"] if row else None
+
+
+async def set_setting(key: str, value: str) -> None:
+    """Set a setting value (insert or replace)."""
+    db = await get_db()
+    await db.execute(
+        "INSERT OR REPLACE INTO settings (key, value, updated_at) VALUES (?, ?, datetime('now'))",
+        (key, value),
+    )
+    await db.commit()
+
+
+async def get_all_settings() -> dict[str, str]:
+    """Get all settings as a key-value dict."""
+    db = await get_db()
+    cursor = await db.execute("SELECT key, value FROM settings")
+    rows = await cursor.fetchall()
+    return {row["key"]: row["value"] for row in rows}

@@ -4,8 +4,22 @@ import logging
 from contextlib import asynccontextmanager
 from pathlib import Path
 
-from fastapi import FastAPI
+from fastapi import FastAPI, Request
+from fastapi.middleware.cors import CORSMiddleware
 from fastapi.staticfiles import StaticFiles
+from starlette.middleware.base import BaseHTTPMiddleware
+from starlette.responses import Response
+
+
+class NoCacheStaticMiddleware(BaseHTTPMiddleware):
+    """Disable caching for static files during development."""
+    async def dispatch(self, request: Request, call_next):
+        response = await call_next(request)
+        if request.url.path.endswith(('.js', '.css', '.html')):
+            response.headers["Cache-Control"] = "no-cache, no-store, must-revalidate"
+            response.headers["Pragma"] = "no-cache"
+            response.headers["Expires"] = "0"
+        return response
 
 from server.db import init_db, close_db
 from server.hooks import start_stale_checker, stop_stale_checker, set_update_callback
@@ -30,6 +44,7 @@ async def lifespan(app: FastAPI):
 
 
 app = FastAPI(title="Claude Code Command Center", lifespan=lifespan)
+app.add_middleware(NoCacheStaticMiddleware)
 
 # Include API and WebSocket routes
 app.include_router(api_router)

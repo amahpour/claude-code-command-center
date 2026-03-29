@@ -44,9 +44,15 @@ async def launch_session(project_dir: str, initial_prompt: str | None = None) ->
         claude_cmd
     ))
 
-    # If there's an initial prompt, send it after a brief delay for claude to start
+    # Accept the trust dialog (sends Enter to confirm "Yes, I trust this folder")
+    await asyncio.sleep(2)
+    await loop.run_in_executor(None, lambda: _run_tmux(
+        "send-keys", "-t", tmux_name, "Enter", check=False
+    ))
+
+    # Wait for Claude to start, then send the prompt if provided
     if initial_prompt:
-        await asyncio.sleep(2)
+        await asyncio.sleep(3)
         escaped = initial_prompt.replace("'", "'\\''")
         await loop.run_in_executor(None, lambda: _run_tmux(
             "send-keys", "-t", tmux_name, escaped, "Enter",

@@ -1,0 +1,9 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 32 32" fill="none" role="img" aria-labelledby="title">
+  <title>Claude Code Command Center logo</title>
+  <rect x="0.75" y="0.75" width="30.5" height="30.5" rx="8.25" fill="#0E1117" stroke="#1C2129" stroke-width="1.5"/>
+  <path d="M10.5 9H8V23H10.5" stroke="#6366F1" stroke-width="2.25" stroke-linecap="round" stroke-linejoin="round"/>
+  <path d="M21.5 9H24V23H21.5" stroke="#6366F1" stroke-width="2.25" stroke-linecap="round" stroke-linejoin="round"/>
+  <circle cx="16" cy="16" r="2.5" fill="#6366F1"/>
+  <path d="M16 9.5C19.5899 9.5 22.5 12.4101 22.5 16" stroke="#6366F1" stroke-width="1.75" stroke-linecap="round" opacity="0.8"/>
+  <path d="M16 12.5C17.933 12.5 19.5 14.067 19.5 16" stroke="#6366F1" stroke-width="1.75" stroke-linecap="round" opacity="0.45"/>
+</svg>

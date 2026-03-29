@@ -48,18 +48,17 @@ async def test_launch_and_stop_session():
 
 
 async def test_launch_session_with_prompt():
-    """Test that launch_session passes prompt correctly."""
+    """Test that launch_session sends prompt via send-keys after launch."""
     with patch("server.terminal._run_tmux") as mock_tmux:
         mock_tmux.return_value = MagicMock(returncode=0, stdout="", stderr="")
         session_id = await launch_session("/tmp/myproject", "Fix the auth bug")
         assert session_id is not None
-        # Verify tmux was called
-        mock_tmux.assert_called_once()
-        call_args = mock_tmux.call_args[0]
-        assert "new-session" in call_args
-        # The command should contain the prompt
-        cmd_str = call_args[-1]
-        assert "Fix the auth bug" in cmd_str
+        # Should be called 3 times: new-session, Enter (trust), send-keys (prompt)
+        assert mock_tmux.call_count == 3
+        # First call: new-session
+        assert "new-session" in mock_tmux.call_args_list[0][0]
+        # Third call: send the prompt
+        assert "Fix the auth bug" in mock_tmux.call_args_list[2][0]
 
 
 async def test_stop_nonexistent_session():
