@@ -5,7 +5,7 @@ A web-based command center for monitoring and managing multiple Claude Code sess
 ## Features
 
 - **Live Dashboard** — At-a-glance view of all active Claude Code sessions with status indicators, context usage, and cost tracking
-- **Interactive Terminals** — Open any session's terminal directly in the browser via xterm.js + WebSocket PTY streaming
+- **Live Transcripts** — Click any session to view its conversation in real-time with collapsible tool calls
 - **Session History** — Browse past sessions with full-text search across transcripts
 - **Analytics** — Track token usage, costs, and session patterns with interactive charts
 - **Hook Integration** — Automatically captures session events via Claude Code hooks
@@ -14,7 +14,6 @@ A web-based command center for monitoring and managing multiple Claude Code sess
 ## Prerequisites
 
 - Python 3.12+
-- tmux
 - Claude Code CLI
 
 ## Quick Start
@@ -51,14 +50,13 @@ Then open **http://localhost:3000** in your browser.
 Browser (localhost:3000)
   |
   |-- REST API (/api/*)      -- Sessions, history, search, analytics
-  |-- WebSocket (/ws/*)      -- Real-time dashboard updates, terminal streaming
+  |-- WebSocket (/ws/*)      -- Real-time dashboard updates
   |-- Static Files (/*)      -- Dashboard HTML/CSS/JS
   |
 FastAPI + uvicorn
   |
   |-- Hook Handler            -- Receives events from Claude Code hooks
   |-- JSONL Watcher           -- Monitors ~/.claude/projects/ for transcript changes
-  |-- Terminal Manager         -- tmux session creation/attachment via PTY
   |-- SQLite + FTS5           -- Persistent storage with full-text search
 ```
 
@@ -93,15 +91,12 @@ FastAPI + uvicorn
 | `/api/search?q=query` | GET | Full-text transcript search |
 | `/api/analytics/summary` | GET | Token/cost summary |
 | `/api/analytics/daily` | GET | Daily usage breakdown |
-| `/api/sessions/new` | POST | Launch new session |
-| `/api/sessions/:id/stop` | POST | Stop a session |
 
 ## Tech Stack
 
 - **Backend:** Python 3.12+ / FastAPI / uvicorn / aiosqlite
 - **Frontend:** Vanilla HTML/CSS/JS with xterm.js (CDN, no build step)
 - **Database:** SQLite with FTS5 full-text search
-- **Terminal:** tmux + PTY for browser-based terminal access
 - **Testing:** pytest + pytest-asyncio (unit), Playwright (e2e)
 
 ## Development
@@ -130,7 +125,6 @@ server/
   db.py            — SQLite database layer
   hooks.py         — Hook event processing
   watcher.py       — JSONL file watcher
-  terminal.py      — tmux/PTY management
   routes/
     api.py         — REST API endpoints
     ws.py          — WebSocket handlers

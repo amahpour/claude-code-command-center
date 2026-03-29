@@ -60,7 +60,6 @@ A FastAPI app running on port 3000. It does four things:
 |-----------|------|-------------|
 | **Hook Processor** | `server/hooks.py` | Receives hook events, updates session state in SQLite (status, cost, tokens, context usage) |
 | **JSONL Watcher** | `server/watcher.py` | Watches `~/.claude/projects/` for `.jsonl` files (Claude Code's conversation logs), parses them, indexes transcripts for full-text search |
-| **Terminal Manager** | `server/terminal.py` | Can launch new Claude Code sessions inside tmux and attach to them via PTY for browser-based terminal access |
 | **Stale Checker** | `server/hooks.py` | Background task that runs every 60s, marks sessions with no activity for 5+ minutes as "stale" |
 
 ### 4. The Database (`~/.claude-command-center/data.db`)
@@ -79,7 +78,7 @@ Vanilla HTML/CSS/JS. No build step. No npm. No framework. Just files served by F
 |------|-------------|
 | `js/app.js` | Opens a WebSocket to `/ws/dashboard`, manages navigation between views |
 | `js/dashboard.js` | Renders session cards in a CSS Grid. Cards show status (color-coded dot), project name, model, context bar, cost, duration |
-| `js/terminal.js` | Uses [xterm.js](https://xtermjs.org/) (loaded via CDN) to render a terminal. Connects via WebSocket to `/ws/terminal/:sessionId` which pipes to a tmux PTY |
+| `js/terminal.js` | Shows a live transcript view when clicking a session card. Polls `/api/sessions/:id/transcript` every 2s for updates. Renders messages with markdown, collapsible tool calls, and tool output |
 | `js/history.js` | Table view of past sessions. Search bar queries the FTS5 index via `/api/search` |
 | `js/analytics.js` | Canvas-drawn charts (no charting library). Bar chart for daily sessions, donut chart for token breakdown |
 
@@ -115,14 +114,11 @@ GET  /api/history?limit=50&offset=0 → All sessions with pagination
 GET  /api/search?q=query            → Full-text search across all transcripts
 GET  /api/analytics/summary         → Total sessions, cost, tokens
 GET  /api/analytics/daily?days=30   → Daily breakdown
-POST /api/sessions/new              → Launch a new Claude session in tmux
-POST /api/sessions/:id/stop         → Kill a running tmux session
 ```
 
 ## WebSocket Endpoints
 
 - **`/ws/dashboard`** — Sends `initial_state` on connect, then `session_update` messages whenever a hook event changes session state. All connected browsers get updates.
-- **`/ws/terminal/:sessionId`** — Bidirectional binary stream. Browser sends keystrokes, server sends terminal output. Only works for sessions launched via the "New Session" button (which creates a tmux session).
 
 ## What to Know
 
