@@ -510,9 +510,22 @@ body {
 .chat-msg {
   display: flex;
   gap: 10px;
-  margin-bottom: 12px;
-  padding-bottom: 12px;
-  border-bottom: 1px solid var(--border);
+  margin-bottom: 10px;
+  padding: 10px 12px;
+  border-radius: 0 var(--radius) var(--radius) 0;
+  border: 1px solid var(--border);
+  border-left: 3px solid var(--surface-5);
+  background: var(--surface-1);
+}
+
+.chat-msg.user {
+  border-left-color: #3b82f6;
+  background: rgba(59, 130, 246, 0.05);
+}
+
+.chat-msg.assistant {
+  border-left-color: #8b5cf6;
+  background: rgba(139, 92, 246, 0.04);
 }
 
 .chat-avatar {
