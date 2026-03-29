@@ -57,6 +57,8 @@ def _parse_jsonl_entry(line: str) -> dict | None:
         "session_id": data.get("sessionId"),
         "cwd": data.get("cwd"),
         "usage": None,
+        "slug": data.get("slug"),
+        "effort_level": data.get("effortLevel"),
     }
 
     message = data.get("message", {})
@@ -216,6 +218,9 @@ async def _process_file_changes(file_path: str):
     model = None
     git_branch = None
     cwd = None
+    slug = None
+    effort_level = None
+    first_user_message = None
 
     for line in new_lines:
         line = line.strip()
@@ -232,6 +237,16 @@ async def _process_file_changes(file_path: str):
             git_branch = entry["git_branch"]
         if entry.get("cwd"):
             cwd = entry["cwd"]
+        if entry.get("slug"):
+            slug = entry["slug"]
+        if entry.get("effort_level"):
+            effort_level = entry["effort_level"]
+        if entry["role"] == "user" and first_user_message is None and entry["content"]:
+            # Skip command/meta/system messages as task descriptions
+            c = entry["content"]
+            if (not c.startswith("<") and not c.startswith("{") and not c.startswith("[")
+                    and len(c) > 5):
+                first_user_message = c[:200]
         # Use latest usage snapshot (each assistant message reports current context size)
         if entry.get("usage"):
             latest_input = entry["usage"]["input_tokens"]
@@ -251,6 +266,15 @@ async def _process_file_changes(file_path: str):
     session_updates = {}
     if model:
         session_updates["model"] = model
+    if slug:
+        session_updates["session_name"] = slug
+    if effort_level:
+        session_updates["effort_level"] = effort_level
+    if first_user_message:
+        # Only set if not already set
+        session = await db.get_session(session_id)
+        if session and not session.get("task_description"):
+            session_updates["task_description"] = first_user_message
     if git_branch:
         session_updates["git_branch"] = git_branch
     if cwd:

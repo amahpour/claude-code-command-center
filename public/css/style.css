@@ -269,6 +269,45 @@ body {
   color: var(--status-stale);
 }
 
+.card-session-name {
+  font-size: 12px;
+  color: var(--text-muted);
+  font-style: italic;
+  margin-bottom: 8px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.card-effort {
+  font-size: 10px;
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+  padding: 1px 6px;
+  border-radius: 3px;
+  font-weight: 700;
+}
+
+.card-effort.max {
+  background: rgba(239, 68, 68, 0.15);
+  color: #ef4444;
+}
+
+.card-effort.high {
+  background: rgba(234, 179, 8, 0.15);
+  color: #eab308;
+}
+
+.card-effort.medium, .card-effort.standard {
+  background: rgba(59, 130, 246, 0.15);
+  color: #3b82f6;
+}
+
+.card-effort.low {
+  background: rgba(107, 114, 128, 0.15);
+  color: #6b7280;
+}
+
 .card-meta {
   display: flex;
   gap: 16px;
@@ -722,6 +761,44 @@ body {
 
 .transcript-live-content {
   color: var(--text-primary);
+}
+
+.transcript-live-msg.tool_call {
+  background: rgba(6, 182, 212, 0.08);
+  border-left: 3px solid var(--status-idle);
+}
+
+.transcript-live-msg.tool_call .transcript-live-role {
+  color: #06b6d4;
+}
+
+.transcript-live-content pre {
+  margin: 6px 0 0;
+  padding: 8px 10px;
+  background: var(--bg-primary);
+  border-radius: 4px;
+  overflow-x: auto;
+  max-height: 200px;
+  overflow-y: auto;
+}
+
+.transcript-live-content code {
+  font-family: 'SF Mono', 'Fira Code', monospace;
+  font-size: 12px;
+  color: #a5b4fc;
+}
+
+.transcript-live-content pre code {
+  white-space: pre-wrap;
+  word-break: break-word;
+}
+
+.tool-filepath {
+  font-family: 'SF Mono', 'Fira Code', monospace;
+  font-size: 12px;
+  color: #22c55e;
+  margin-bottom: 4px;
+  font-weight: 600;
 }
 
 /* ---- Responsive ---- */

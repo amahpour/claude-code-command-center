@@ -1,7 +1,9 @@
 """Hook event processing — handles events from Claude Code hooks."""
 
 import asyncio
+import json
 import logging
+import os
 import subprocess
 from datetime import datetime, timezone
 
@@ -26,6 +28,17 @@ async def _notify_update(session: dict):
     """Notify listeners of a session update."""
     if _on_session_update:
         await _on_session_update(session)
+
+
+def _read_effort_level() -> str | None:
+    """Read the effort level from Claude Code settings."""
+    try:
+        settings_path = os.path.expanduser("~/.claude/settings.json")
+        with open(settings_path) as f:
+            settings = json.load(f)
+        return settings.get("effortLevel")
+    except (FileNotFoundError, json.JSONDecodeError, OSError):
+        return None
 
 
 def _extract_git_branch(working_dir: str | None) -> str | None:
@@ -72,6 +85,10 @@ async def process_hook_event(event_data: dict) -> dict | None:
             project_path=project_path,
             model=event_data.get("model"),
         )
+        # Set effort level from settings on first creation
+        effort = _read_effort_level()
+        if effort:
+            session = await db.update_session(session_id, effort_level=effort)
 
     # Record the event (session now guaranteed to exist)
     await db.add_event(session_id, event_type, tool_name=tool_name, payload=payload)

@@ -79,15 +79,23 @@ const Dashboard = {
       prLink = `<a href="${this._escapeHTML(s.pr_url)}" class="card-pr-link" target="_blank" onclick="event.stopPropagation()">PR &rarr;</a>`;
     }
 
+    const sessionName = s.session_name ? `<div class="card-session-name">${this._escapeHTML(s.session_name)}</div>` : '';
+    const effort = s.effort_level || '';
+    const effortBadge = effort ? `<span class="card-effort ${effort}">${effort}</span>` : '';
+    // Friendly model name
+    const modelShort = model.replace('claude-', '').replace('-4-6', ' 4.6').replace('-4-5', ' 4.5');
+
     return `
       <div class="card-header">
         <span class="status-dot ${status}"></span>
         <span class="card-project">${this._escapeHTML(s.project_name || s.id)}</span>
         <span class="card-status-label ${status}">${status}</span>
       </div>
+      ${sessionName}
       <div class="card-meta">
         <span class="card-meta-item">&#x2387; ${this._escapeHTML(branch)}</span>
-        <span class="card-meta-item">${this._escapeHTML(model)}</span>
+        <span class="card-meta-item">${this._escapeHTML(modelShort)}</span>
+        ${effortBadge}
       </div>
       ${s.task_description ? `<div class="card-task">${this._escapeHTML(s.task_description)}</div>` : ''}
       <div class="context-bar">

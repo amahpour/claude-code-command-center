@@ -55,8 +55,10 @@ async def _create_tables(db: aiosqlite.Connection):
             id TEXT PRIMARY KEY,
             project_path TEXT,
             project_name TEXT,
+            session_name TEXT,
             git_branch TEXT,
             model TEXT,
+            effort_level TEXT,
             status TEXT DEFAULT 'idle',
             task_description TEXT,
             context_usage_percent REAL DEFAULT 0,
@@ -96,6 +98,13 @@ async def _create_tables(db: aiosqlite.Connection):
             FOREIGN KEY (session_id) REFERENCES sessions(id)
         );
     """)
+
+    # Add columns that may not exist in older databases
+    for col, col_type in [("session_name", "TEXT"), ("effort_level", "TEXT")]:
+        try:
+            await db.execute(f"ALTER TABLE sessions ADD COLUMN {col} {col_type}")
+        except Exception:
+            pass  # Column already exists
 
     # FTS5 virtual table — create separately since IF NOT EXISTS works differently
     try:
