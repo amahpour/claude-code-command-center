@@ -67,20 +67,22 @@ def _parse_jsonl_entry(line: str) -> dict | None:
 
     if msg_type == "user":
         entry["role"] = "user"
-        # User messages: content can be top-level or in message
-        content = data.get("content") or message.get("content", "")
-        # Skip meta-only user entries (tool results, etc.)
-        if data.get("isMeta") and not content:
+        # Skip meta/system user entries (commands, caveats, etc.)
+        if data.get("isMeta"):
+            return None
+        # Get content from message.content (real user messages)
+        content = message.get("content", "")
+        # Fall back to top-level content only if no message content
+        if not content:
+            content = data.get("content", "")
+        # Skip system XML tags
+        if isinstance(content, str) and (content.startswith("<command-") or
+                content.startswith("<local-command") or content.startswith("<system-")):
             return None
         # Handle tool results embedded in user entries
         tool_result = data.get("toolUseResult")
         if tool_result:
-            if isinstance(tool_result, dict):
-                stdout = tool_result.get("stdout", "")
-                stderr = tool_result.get("stderr", "")
-                content = stdout or stderr or str(tool_result)
-            elif isinstance(tool_result, str):
-                content = tool_result
+            content = _format_tool_result(tool_result)
             entry["role"] = "tool_result"
         entry["content"] = _extract_content(content)
 
@@ -122,6 +124,89 @@ def _parse_jsonl_entry(line: str) -> dict | None:
     return entry
 
 
+def _format_tool_result(result) -> str:
+    """Format a tool result for clean display."""
+    if isinstance(result, str):
+        if len(result) > 1000:
+            return result[:1000] + "\n... (truncated)"
+        return result
+
+    if isinstance(result, dict):
+        # Bash tool results: show stdout/stderr
+        stdout = result.get("stdout", "")
+        stderr = result.get("stderr", "")
+        if stdout or stderr:
+            text = stdout or stderr
+            if len(text) > 1000:
+                text = text[:1000] + "\n... (truncated)"
+            return text
+
+        # File operation results (Write, Edit, Read)
+        file_path = result.get("filePath") or result.get("file_path", "")
+        op_type = result.get("type", "")
+        if file_path:
+            if op_type:
+                return f"{op_type}: {file_path}"
+            return file_path
+
+        # Generic dict: format concisely
+        text = json.dumps(result, indent=2, ensure_ascii=False)
+        if len(text) > 1000:
+            text = text[:1000] + "\n... (truncated)"
+        return text
+
+    return str(result)[:1000]
+
+
+def _format_tool_summary(name: str, inp: dict) -> str:
+    """Format a tool call's input into a readable summary."""
+    if not isinstance(inp, dict):
+        return str(inp)[:300]
+
+    name_lower = name.lower()
+
+    if name_lower in ("read",):
+        return inp.get("file_path", "")
+
+    if name_lower in ("write",):
+        fp = inp.get("file_path", "")
+        content = inp.get("content", "")
+        preview = content[:200] + "..." if len(content) > 200 else content
+        return f"{fp}\n{preview}"
+
+    if name_lower in ("edit",):
+        fp = inp.get("file_path", "")
+        old = inp.get("old_string", "")[:100]
+        new = inp.get("new_string", "")[:100]
+        return f"{fp}\n--- {old}\n+++ {new}"
+
+    if name_lower in ("bash",):
+        cmd = inp.get("command", "")
+        desc = inp.get("description", "")
+        return f"$ {cmd}" + (f"\n# {desc}" if desc else "")
+
+    if name_lower in ("grep",):
+        return f"pattern: {inp.get('pattern', '')}  path: {inp.get('path', '.')}"
+
+    if name_lower in ("glob",):
+        return f"pattern: {inp.get('pattern', '')}  path: {inp.get('path', '.')}"
+
+    if name_lower in ("agent",):
+        return inp.get("prompt", inp.get("description", ""))[:300]
+
+    if name_lower in ("taskupdate", "taskcreate"):
+        return inp.get("subject", inp.get("description", ""))[:200]
+
+    # Generic: show key fields concisely
+    summary_parts = []
+    for k, v in inp.items():
+        vs = str(v)
+        if len(vs) > 100:
+            vs = vs[:100] + "..."
+        summary_parts.append(f"{k}: {vs}")
+    return "\n".join(summary_parts[:5])
+
+
 def _extract_content(content) -> str | None:
     """Extract text content from various content formats."""
     if isinstance(content, str):
@@ -137,10 +222,10 @@ def _extract_content(content) -> str | None:
                     parts.append(item.get("text", ""))
                 elif item.get("type") == "tool_use":
                     name = item.get("name", "unknown")
-                    inp = json.dumps(item.get("input", {}), ensure_ascii=False)
-                    if len(inp) > 500:
-                        inp = inp[:500] + "..."
-                    parts.append(f"[Tool: {name}] {inp}")
+                    inp = item.get("input", {})
+                    # Format tool calls cleanly based on tool type
+                    summary = _format_tool_summary(name, inp)
+                    parts.append(f"[Tool: {name}]\n{summary}")
                 elif item.get("type") == "tool_result":
                     result_content = item.get("content", "")
                     if isinstance(result_content, str):
