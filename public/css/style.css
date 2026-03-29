@@ -422,6 +422,12 @@ body {
   border-radius: 3px;
 }
 
+.card-ticket-tag.empty {
+  color: var(--text-faint);
+  font-family: var(--font-sans);
+  font-style: italic;
+}
+
 .card-ticket-edit {
   background: none;
   border: none;

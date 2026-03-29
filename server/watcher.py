@@ -8,6 +8,7 @@ import re
 from pathlib import Path
 
 from server import db
+from server.pr_lookup import find_pr_url
 
 logger = logging.getLogger(__name__)
 
@@ -373,6 +374,19 @@ async def _process_file_changes(file_path: str):
         session_updates["project_path"] = cwd
         project_name = cwd.rsplit("/", 1)[-1] if "/" in cwd else cwd
         session_updates["project_name"] = project_name
+    # Look up PR/MR URL if we have branch + project path and no pr_url yet
+    effective_cwd = cwd or (session_updates.get("project_path") if session_updates else None)
+    effective_branch = git_branch or (session_updates.get("git_branch") if session_updates else None)
+    if effective_cwd and effective_branch:
+        session = session or await db.get_session(session_id)
+        if not (session and session.get("pr_url")):
+            try:
+                pr_url = await find_pr_url(effective_cwd, effective_branch)
+                if pr_url:
+                    session_updates["pr_url"] = pr_url
+            except Exception:
+                pass  # Non-critical, skip silently
+
     if latest_input > 0 or latest_cache > 0:
         # The latest message's input+cache tokens = current context window size
         context_tokens = latest_input + latest_cache

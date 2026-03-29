@@ -41,8 +41,12 @@ class SettingsUpdate(BaseModel):
     jira_server_url: str | None = None
 
 
+_UNSET = object()
+
+
 class SessionPatch(BaseModel):
-    ticket_id: str | None = None
+    model_config = {"extra": "forbid"}
+    ticket_id: str | None = _UNSET
 
 
 @router.get("/health")
@@ -152,8 +156,8 @@ async def patch_session(session_id: str, req: SessionPatch):
     if not session:
         raise HTTPException(status_code=404, detail="Session not found")
     updates = {}
-    if req.ticket_id is not None:
-        updates["ticket_id"] = req.ticket_id
+    if req.ticket_id is not _UNSET:
+        updates["ticket_id"] = req.ticket_id or None
     if not updates:
         return {"session": session}
     updated = await db.update_session(session_id, **updates)

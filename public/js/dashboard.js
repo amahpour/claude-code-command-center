@@ -98,6 +98,8 @@ const Dashboard = {
       } else {
         ticketTag = `<span class="card-ticket-tag">${this._escapeHTML(s.ticket_id)}</span>`;
       }
+    } else {
+      ticketTag = `<span class="card-ticket-tag empty">No ticket</span>`;
     }
 
     const sessionName = s.session_name ? `<div class="card-session-name">${this._escapeHTML(s.session_name)}</div>` : '';
@@ -160,7 +162,7 @@ const Dashboard = {
     fetch(`/api/sessions/${sessionId}`, {
       method: 'PATCH',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ ticket_id: newValue.trim().toUpperCase() || null }),
+      body: JSON.stringify({ ticket_id: newValue.trim().toUpperCase() || '' }),
     })
     .then(r => r.json())
     .then(data => {
