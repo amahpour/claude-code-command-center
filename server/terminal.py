@@ -35,19 +35,23 @@ async def launch_session(project_dir: str, initial_prompt: str | None = None) ->
     session_id = str(uuid.uuid4())[:8]
     tmux_name = _tmux_session_name(session_id)
 
-    # Build the command to run inside tmux
-    if initial_prompt:
-        # Escape single quotes in the prompt
-        escaped_prompt = initial_prompt.replace("'", "'\"'\"'")
-        claude_cmd = f"cd '{project_dir}' && claude -p '{escaped_prompt}'"
-    else:
-        claude_cmd = f"cd '{project_dir}' && claude"
+    # Launch tmux with an interactive claude session
+    claude_cmd = f"cd '{project_dir}' && claude"
 
     loop = asyncio.get_event_loop()
     await loop.run_in_executor(None, lambda: _run_tmux(
         "new-session", "-d", "-s", tmux_name, "-x", "200", "-y", "50",
         claude_cmd
     ))
+
+    # If there's an initial prompt, send it after a brief delay for claude to start
+    if initial_prompt:
+        await asyncio.sleep(2)
+        escaped = initial_prompt.replace("'", "'\\''")
+        await loop.run_in_executor(None, lambda: _run_tmux(
+            "send-keys", "-t", tmux_name, escaped, "Enter",
+            check=False
+        ))
 
     _session_tmux_map[session_id] = tmux_name
     logger.info("Launched tmux session %s for session %s in %s", tmux_name, session_id, project_dir)
