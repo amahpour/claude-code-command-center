@@ -162,40 +162,76 @@ const Dashboard = {
     }
   },
 
+  _inlineEdit(title, currentValue, onSave) {
+    const modal = document.getElementById('inline-edit-modal');
+    const input = document.getElementById('inline-edit-input');
+    const titleEl = document.getElementById('inline-edit-title');
+    const saveBtn = document.getElementById('inline-edit-save');
+    const cancelBtn = document.getElementById('inline-edit-cancel');
+
+    titleEl.textContent = title;
+    input.value = currentValue;
+    modal.style.display = 'flex';
+    input.focus();
+    input.select();
+
+    const cleanup = () => {
+      modal.style.display = 'none';
+      saveBtn.replaceWith(saveBtn.cloneNode(true));
+      cancelBtn.replaceWith(cancelBtn.cloneNode(true));
+      input.removeEventListener('keydown', onKey);
+      modal.removeEventListener('click', onBackdrop);
+    };
+
+    const save = () => { cleanup(); onSave(input.value); };
+    const cancel = () => { cleanup(); };
+
+    const onKey = (e) => {
+      if (e.key === 'Enter') save();
+      else if (e.key === 'Escape') cancel();
+    };
+    const onBackdrop = (e) => { if (e.target === modal) cancel(); };
+
+    input.addEventListener('keydown', onKey);
+    modal.addEventListener('click', onBackdrop);
+    document.getElementById('inline-edit-save').addEventListener('click', save);
+    document.getElementById('inline-edit-cancel').addEventListener('click', cancel);
+  },
+
   editDisplayName(sessionId, currentValue) {
-    const newValue = prompt('Rename session:', currentValue);
-    if (newValue === null) return;
-    fetch(`/api/sessions/${sessionId}`, {
-      method: 'PATCH',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ display_name: newValue.trim() || '' }),
-    })
-    .then(r => r.json())
-    .then(data => {
-      if (data.session) {
-        App.sessions[data.session.id] = data.session;
-        this.updateCard(data.session);
-      }
-    })
-    .catch(e => console.error('Failed to rename session:', e));
+    this._inlineEdit('Rename session', currentValue, (val) => {
+      fetch(`/api/sessions/${sessionId}`, {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ display_name: val.trim() || '' }),
+      })
+      .then(r => r.json())
+      .then(data => {
+        if (data.session) {
+          App.sessions[data.session.id] = data.session;
+          this.updateCard(data.session);
+        }
+      })
+      .catch(e => console.error('Failed to rename session:', e));
+    });
   },
 
   editTicketId(sessionId, currentValue) {
-    const newValue = prompt('Enter Jira ticket ID (e.g., CIT-42):', currentValue);
-    if (newValue === null) return;
-    fetch(`/api/sessions/${sessionId}`, {
-      method: 'PATCH',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ ticket_id: newValue.trim().toUpperCase() || '' }),
-    })
-    .then(r => r.json())
-    .then(data => {
-      if (data.session) {
-        App.sessions[data.session.id] = data.session;
-        this.updateCard(data.session);
-      }
-    })
-    .catch(e => console.error('Failed to update ticket ID:', e));
+    this._inlineEdit('Edit ticket ID', currentValue, (val) => {
+      fetch(`/api/sessions/${sessionId}`, {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ ticket_id: val.trim().toUpperCase() || '' }),
+      })
+      .then(r => r.json())
+      .then(data => {
+        if (data.session) {
+          App.sessions[data.session.id] = data.session;
+          this.updateCard(data.session);
+        }
+      })
+      .catch(e => console.error('Failed to update ticket ID:', e));
+    });
   },
 
   _escapeHTML(str) {

@@ -561,6 +561,10 @@ body {
 .textarea { min-height: 80px; resize: vertical; }
 
 .modal-wide { max-width: 560px; }
+.modal-sm { max-width: 360px; }
+.modal-sm h3 { margin-bottom: 12px; font-size: 14px; font-weight: 600; }
+.modal-sm .input { margin-bottom: 4px; }
+.modal-sm .modal-actions { margin-top: 12px; }
 
 .input-with-btn { display: flex; gap: 8px; }
 .input-with-btn .input { flex: 1; }
