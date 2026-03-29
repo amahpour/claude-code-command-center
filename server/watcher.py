@@ -4,6 +4,7 @@ import asyncio
 import json
 import logging
 import os
+import re
 from pathlib import Path
 
 from server import db
@@ -250,6 +251,24 @@ def _session_id_from_path(file_path: str) -> str | None:
     return p.stem
 
 
+async def _extract_ticket_id(branch_name: str) -> str | None:
+    """Extract a Jira ticket ID from a git branch name using configured project keys."""
+    raw = await db.get_setting("jira_project_keys")
+    if not raw:
+        return None
+    try:
+        keys = json.loads(raw)
+    except (json.JSONDecodeError, TypeError):
+        return None
+    if not keys:
+        return None
+    pattern = r"(?:^|[/_-])(" + "|".join(re.escape(k) for k in keys) + r")-(\d+)"
+    match = re.search(pattern, branch_name, re.IGNORECASE)
+    if match:
+        return f"{match.group(1).upper()}-{match.group(2)}"
+    return None
+
+
 async def _process_file_changes(file_path: str):
     """Read new lines from a JSONL file and store as transcripts.
 
@@ -345,6 +364,11 @@ async def _process_file_changes(file_path: str):
             session_updates["task_description"] = first_user_message
     if git_branch:
         session_updates["git_branch"] = git_branch
+        ticket_id = await _extract_ticket_id(git_branch)
+        if ticket_id:
+            session = session or await db.get_session(session_id)
+            if not (session and session.get("ticket_id")):
+                session_updates["ticket_id"] = ticket_id
     if cwd:
         session_updates["project_path"] = cwd
         project_name = cwd.rsplit("/", 1)[-1] if "/" in cwd else cwd

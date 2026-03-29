@@ -7,13 +7,16 @@
 const App = {
   ws: null,
   sessions: {},
+  settings: {},
   currentView: 'dashboard',
 
   init() {
     this.setupNavigation();
     this.setupModal();
+    this.setupSettings();
     this.connectWebSocket();
     this.loadInitialData();
+    this.loadSettings();
     this.setupHistory();
   },
 
@@ -72,6 +75,57 @@ const App = {
 
   // ---- Modal (disabled — see GitHub issue #4) ----
   setupModal() {},
+
+  // ---- Settings ----
+  async loadSettings() {
+    try {
+      const resp = await fetch('/api/settings');
+      const data = await resp.json();
+      this.settings = data.settings || {};
+    } catch (e) {
+      console.error('Failed to load settings:', e);
+    }
+  },
+
+  setupSettings() {
+    const modal = document.getElementById('settings-modal');
+    const btn = document.getElementById('settings-btn');
+    const cancel = document.getElementById('settings-cancel');
+    const save = document.getElementById('settings-save');
+
+    btn.addEventListener('click', () => {
+      const keys = this.settings.jira_project_keys || [];
+      document.getElementById('jira-keys').value = keys.join(', ');
+      document.getElementById('jira-url').value = this.settings.jira_server_url || '';
+      modal.style.display = 'flex';
+    });
+
+    cancel.addEventListener('click', () => { modal.style.display = 'none'; });
+    modal.addEventListener('click', (e) => {
+      if (e.target === modal) modal.style.display = 'none';
+    });
+
+    save.addEventListener('click', async () => {
+      const keysRaw = document.getElementById('jira-keys').value;
+      const keys = keysRaw.split(',').map(k => k.trim().toUpperCase()).filter(Boolean);
+      const url = document.getElementById('jira-url').value.trim();
+      try {
+        const resp = await fetch('/api/settings', {
+          method: 'PUT',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            jira_project_keys: keys,
+            jira_server_url: url || null,
+          }),
+        });
+        const data = await resp.json();
+        this.settings = data.settings || {};
+        modal.style.display = 'none';
+      } catch (e) {
+        console.error('Failed to save settings:', e);
+      }
+    });
+  },
 
   setupFolderPicker() {
     const browseBtn = document.getElementById('browse-btn');

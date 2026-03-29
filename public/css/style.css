@@ -41,6 +41,9 @@
 
 * { margin: 0; padding: 0; box-sizing: border-box; }
 
+a { color: var(--accent-hover); text-decoration: none; }
+a:hover { text-decoration: underline; }
+
 body {
   font-family: var(--font-sans);
   background: var(--surface-0);
@@ -373,6 +376,55 @@ body {
 }
 
 .card-pr-link:hover { text-decoration: underline; }
+
+.card-ticket-area {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+}
+
+.card-ticket-link {
+  color: var(--accent);
+  text-decoration: none;
+  font-size: 11px;
+  font-family: var(--font-mono);
+  background: var(--accent-muted);
+  padding: 1px 6px;
+  border-radius: 3px;
+}
+
+.card-ticket-link:hover {
+  text-decoration: underline;
+  color: var(--accent-hover);
+}
+
+.card-ticket-tag {
+  font-size: 11px;
+  font-family: var(--font-mono);
+  color: var(--text-secondary);
+  background: var(--surface-3);
+  padding: 1px 6px;
+  border-radius: 3px;
+}
+
+.card-ticket-edit {
+  background: none;
+  border: none;
+  color: var(--text-faint);
+  cursor: pointer;
+  font-size: 11px;
+  padding: 0 2px;
+  opacity: 0;
+  transition: opacity var(--transition), color var(--transition);
+}
+
+.session-card:hover .card-ticket-edit {
+  opacity: 1;
+}
+
+.card-ticket-edit:hover {
+  color: var(--accent-hover);
+}
 
 /* ---- Buttons ---- */
 .btn {

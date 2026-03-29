@@ -84,6 +84,16 @@ const Dashboard = {
       prLink = `<a href="${this._escapeHTML(s.pr_url)}" class="card-pr-link" target="_blank" onclick="event.stopPropagation()">PR &rarr;</a>`;
     }
 
+    let ticketTag = '';
+    if (s.ticket_id) {
+      const jiraUrl = (App.settings && App.settings.jira_server_url) || '';
+      if (jiraUrl) {
+        ticketTag = `<a href="${this._escapeHTML(jiraUrl)}/browse/${this._escapeHTML(s.ticket_id)}" class="card-ticket-link" target="_blank" onclick="event.stopPropagation()">${this._escapeHTML(s.ticket_id)}</a>`;
+      } else {
+        ticketTag = `<span class="card-ticket-tag">${this._escapeHTML(s.ticket_id)}</span>`;
+      }
+    }
+
     const sessionName = s.session_name ? `<div class="card-session-name">${this._escapeHTML(s.session_name)}</div>` : '';
     const effort = s.effort_level || '';
     const effortBadge = effort ? `<span class="card-effort ${effort}">${effort}</span>` : '';
@@ -115,6 +125,10 @@ const Dashboard = {
       <div class="card-footer">
         <span class="card-cost">$${(s.cost_usd || 0).toFixed(4)}</span>
         <span>${duration}</span>
+        <span class="card-ticket-area">
+          ${ticketTag}
+          <button class="card-ticket-edit" onclick="event.stopPropagation(); Dashboard.editTicketId('${this._escapeHTML(s.id)}', '${this._escapeHTML(s.ticket_id || '')}')" title="Edit ticket ID">&#9998;</button>
+        </span>
         ${prLink}
       </div>
     `;
@@ -132,6 +146,24 @@ const Dashboard = {
     } catch {
       return '-';
     }
+  },
+
+  editTicketId(sessionId, currentValue) {
+    const newValue = prompt('Enter Jira ticket ID (e.g., CIT-42):', currentValue);
+    if (newValue === null) return;
+    fetch(`/api/sessions/${sessionId}`, {
+      method: 'PATCH',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ ticket_id: newValue.trim().toUpperCase() || null }),
+    })
+    .then(r => r.json())
+    .then(data => {
+      if (data.session) {
+        App.sessions[data.session.id] = data.session;
+        this.updateCard(data.session);
+      }
+    })
+    .catch(e => console.error('Failed to update ticket ID:', e));
   },
 
   _escapeHTML(str) {

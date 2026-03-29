@@ -329,6 +329,8 @@ const SessionViewer = {
       // Inline formatting
       p = p.replace(/`([^`]+)`/g, '<code>$1</code>');
       p = p.replace(/\*\*([^*]+)\*\*/g, '<strong>$1</strong>');
+      // Markdown links [text](url)
+      p = p.replace(/\[([^\]]+)\]\(([^)]+)\)/g, '<a href="$2" target="_blank" rel="noopener">$1</a>');
       // List items (- or * at start of line)
       p = p.replace(/^[\-\*] (.+)$/gm, '<li>$1</li>');
       p = p.replace(/(<li>.*<\/li>\n?)+/g, '<ul>$&</ul>');

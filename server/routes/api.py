@@ -1,5 +1,7 @@
 """REST API routes for the Claude Code Command Center."""
 
+import json
+
 from fastapi import APIRouter, HTTPException, Query, Request
 from pydantic import BaseModel
 
@@ -32,6 +34,15 @@ class HookEvent(BaseModel):
 class NewSessionRequest(BaseModel):
     project_dir: str
     prompt: str | None = None
+
+
+class SettingsUpdate(BaseModel):
+    jira_project_keys: list[str] | None = None
+    jira_server_url: str | None = None
+
+
+class SessionPatch(BaseModel):
+    ticket_id: str | None = None
 
 
 @router.get("/health")
@@ -109,6 +120,47 @@ async def analytics_daily(days: int = Query(30, ge=1, le=365)):
     """Daily breakdown of usage."""
     daily = await db.get_analytics_daily(days=days)
     return {"days": daily}
+
+
+@router.get("/settings")
+async def get_settings():
+    """Get all application settings."""
+    raw = await db.get_all_settings()
+    settings = {}
+    for key, value in raw.items():
+        try:
+            settings[key] = json.loads(value)
+        except (json.JSONDecodeError, TypeError):
+            settings[key] = value
+    return {"settings": settings}
+
+
+@router.put("/settings")
+async def update_settings(req: SettingsUpdate):
+    """Update application settings."""
+    if req.jira_project_keys is not None:
+        await db.set_setting("jira_project_keys", json.dumps(req.jira_project_keys))
+    if req.jira_server_url is not None:
+        await db.set_setting("jira_server_url", json.dumps(req.jira_server_url))
+    return await get_settings()
+
+
+@router.patch("/sessions/{session_id}")
+async def patch_session(session_id: str, req: SessionPatch):
+    """Update editable session fields (e.g., ticket_id)."""
+    session = await db.get_session(session_id)
+    if not session:
+        raise HTTPException(status_code=404, detail="Session not found")
+    updates = {}
+    if req.ticket_id is not None:
+        updates["ticket_id"] = req.ticket_id
+    if not updates:
+        return {"session": session}
+    updated = await db.update_session(session_id, **updates)
+    from server.routes.ws import broadcast_session_update
+    if updated:
+        await broadcast_session_update(updated)
+    return {"session": updated}
 
 
 @router.get("/browse")

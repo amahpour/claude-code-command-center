@@ -25,8 +25,7 @@
         </div>
       </div>
       <div class="topbar-actions">
-        <!-- New Session disabled — see GitHub issue #4 -->
-        <!-- <button class="btn btn-primary" id="new-session-btn">+ New Session</button> -->
+        <button class="btn btn-sm" id="settings-btn" title="Settings">&#9881; Settings</button>
       </div>
     </header>
 
@@ -71,7 +70,23 @@
       <div class="terminal-container" id="terminal-container"></div>
     </div>
 
-    <!-- New Session Modal — disabled, see GitHub issue #4 -->
+    <!-- Settings Modal -->
+    <div class="modal-overlay" id="settings-modal" style="display:none">
+      <div class="modal">
+        <h2>Settings</h2>
+        <div class="form-group">
+          <label for="jira-keys">Jira Project Keys (comma-separated)</label>
+          <input type="text" class="input" id="jira-keys" placeholder="CIT, PLAT, INFRA" />
+        </div>
+        <div class="form-group">
+          <label for="jira-url">Jira Server URL</label>
+          <input type="text" class="input" id="jira-url" placeholder="https://company.atlassian.net" />
+        </div>
+        <div class="modal-actions">
+          <button class="btn" id="settings-cancel">Cancel</button>
+          <button class="btn btn-primary" id="settings-save">Save</button>
+        </div>
+      </div>
     </div>
   </div>
 
