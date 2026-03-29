@@ -68,15 +68,10 @@ def test_navigation_tabs(page):
     assert page.is_visible("#view-dashboard")
 
 
-def test_new_session_modal(page):
+def test_dashboard_has_no_new_session_button(page):
+    """New Session button is disabled (see issue #4)."""
     page.goto(SERVER_URL)
-
-    page.click("#new-session-btn")
-    assert page.is_visible(".modal")
-
-    page.click("#modal-cancel")
-    page.wait_for_timeout(200)
-    assert "none" in (page.get_attribute("#new-session-modal", "style") or "")
+    assert not page.is_visible("#new-session-btn")
 
 
 def test_hook_creates_session_card(page):
