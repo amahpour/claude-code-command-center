@@ -338,12 +338,16 @@ const SessionViewer = {
       p = p.replace(/^\d+\. (.+)$/gm, '<li>$1</li>');
       // Newlines to <br> for remaining text
       p = p.replace(/\n/g, '<br>');
-      // Clean up extra <br> around block elements
-      p = p.replace(/<br>(<h[234]>)/g, '$1');
-      p = p.replace(/(<\/h[234]>)<br>/g, '$1');
-      p = p.replace(/<br>(<hr>)<br>/g, '$1');
-      p = p.replace(/<br>(<ul>)/g, '$1');
-      p = p.replace(/(<\/ul>)<br>/g, '$1');
+      // Collapse multiple <br> into one
+      p = p.replace(/(<br>){2,}/g, '<br>');
+      // Remove <br> adjacent to any block element
+      p = p.replace(/<br>(<(?:h[234]|hr|ul|ol|table|li|\/ul|\/ol|\/table|\/li)[\s>])/gi, '$1');
+      p = p.replace(/(<\/(?:h[234]|ul|ol|table|li)>)<br>/gi, '$1');
+      p = p.replace(/<br>(<hr>)/g, '$1');
+      p = p.replace(/(<hr>)<br>/g, '$1');
+      // Remove leading/trailing <br>
+      p = p.replace(/^(<br>)+/, '');
+      p = p.replace(/(<br>)+$/, '');
       return p;
     }).join('');
     return s;
