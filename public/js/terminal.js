@@ -489,9 +489,4 @@ document.addEventListener('DOMContentLoaded', () => {
     window.history.back();
   });
 
-  document.getElementById('terminal-popout').addEventListener('click', () => {
-    if (SessionViewer.currentSessionId) {
-      window.open(`/terminal.html?session=${SessionViewer.currentSessionId}`, '_blank', 'width=1000,height=600');
-    }
-  });
 });
