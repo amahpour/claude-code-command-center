@@ -1,34 +1,85 @@
 /**
- * Terminal View — xterm.js terminal with WebSocket PTY streaming
+ * Terminal / Session Viewer
+ *
+ * When a session was launched via the Command Center (tmux), shows an interactive terminal.
+ * For all other sessions, shows a live transcript that auto-updates.
  */
 
-const Terminal = {
+const SessionViewer = {
+  ws: null,
   term: null,
   fitAddon: null,
-  ws: null,
   currentSessionId: null,
+  _pollInterval: null,
+  _lastTranscriptCount: 0,
+  _mode: null, // 'terminal' or 'transcript'
 
   open(sessionId, title) {
     this.currentSessionId = sessionId;
     const overlay = document.getElementById('terminal-overlay');
     const titleEl = document.getElementById('terminal-title');
-    const container = document.getElementById('terminal-container');
 
     titleEl.textContent = title || sessionId;
     overlay.style.display = 'flex';
 
-    // Clean up previous terminal
-    if (this.term) {
-      this.term.dispose();
-      this.term = null;
-    }
-    if (this.ws) {
-      this.ws.close();
-      this.ws = null;
-    }
+    this._cleanup();
+
+    // Try terminal first, fall back to transcript
+    this._tryTerminal(sessionId);
+  },
+
+  _tryTerminal(sessionId) {
+    const proto = location.protocol === 'https:' ? 'wss:' : 'ws:';
+    const url = `${proto}//${location.host}/ws/terminal/${sessionId}`;
+
+    this.ws = new WebSocket(url);
+    let gotError = false;
+
+    this.ws.onmessage = (event) => {
+      if (typeof event.data === 'string') {
+        try {
+          const msg = JSON.parse(event.data);
+          if (msg.type === 'error') {
+            gotError = true;
+            this.ws.close();
+            // Fall back to transcript view
+            this._showTranscript(sessionId);
+            return;
+          }
+          if (msg.type === 'pong') return;
+        } catch {
+          // Not JSON — real terminal data
+          if (!this.term) this._initXterm();
+          this.term.write(event.data);
+        }
+      } else if (event.data instanceof Blob) {
+        if (!this.term) this._initXterm();
+        event.data.arrayBuffer().then(buf => {
+          this.term.write(new Uint8Array(buf));
+        });
+      }
+    };
+
+    this.ws.onopen = () => {
+      // Wait for first message to determine mode
+    };
+
+    this.ws.onclose = () => {
+      if (!gotError && this.term) {
+        this.term.writeln('\x1b[2m--- Disconnected ---\x1b[0m');
+      }
+    };
+
+    this.ws.onerror = () => {
+      this._showTranscript(sessionId);
+    };
+  },
+
+  _initXterm() {
+    this._mode = 'terminal';
+    const container = document.getElementById('terminal-container');
     container.innerHTML = '';
 
-    // Initialize xterm.js
     this.term = new window.Terminal({
       cursorBlink: true,
       fontSize: 14,
@@ -38,48 +89,17 @@ const Terminal = {
         foreground: '#e0e0e0',
         cursor: '#7c3aed',
         selectionBackground: 'rgba(124, 58, 237, 0.3)',
-        black: '#1a1a2e',
-        red: '#ef4444',
-        green: '#22c55e',
-        yellow: '#eab308',
-        blue: '#3b82f6',
-        magenta: '#7c3aed',
-        cyan: '#06b6d4',
-        white: '#e0e0e0',
-        brightBlack: '#6b7280',
-        brightRed: '#f87171',
-        brightGreen: '#4ade80',
-        brightYellow: '#facc15',
-        brightBlue: '#60a5fa',
-        brightMagenta: '#a78bfa',
-        brightCyan: '#22d3ee',
-        brightWhite: '#f3f4f6',
       },
     });
 
     this.fitAddon = new window.FitAddon.FitAddon();
     this.term.loadAddon(this.fitAddon);
-
-    try {
-      const webLinksAddon = new window.WebLinksAddon.WebLinksAddon();
-      this.term.loadAddon(webLinksAddon);
-    } catch (e) {
-      // WebLinksAddon may not be available
-    }
-
     this.term.open(container);
     this.fitAddon.fit();
 
-    // Connect WebSocket to PTY
-    this.connectPTY(sessionId);
-
-    // Handle resize
-    this._resizeHandler = () => {
-      if (this.fitAddon) this.fitAddon.fit();
-    };
+    this._resizeHandler = () => { if (this.fitAddon) this.fitAddon.fit(); };
     window.addEventListener('resize', this._resizeHandler);
 
-    // Send keystrokes to PTY
     this.term.onData((data) => {
       if (this.ws && this.ws.readyState === WebSocket.OPEN) {
         this.ws.send(data);
@@ -87,77 +107,111 @@ const Terminal = {
     });
   },
 
-  connectPTY(sessionId) {
-    const proto = location.protocol === 'https:' ? 'wss:' : 'ws:';
-    const url = `${proto}//${location.host}/ws/terminal/${sessionId}`;
+  async _showTranscript(sessionId) {
+    this._mode = 'transcript';
+    const container = document.getElementById('terminal-container');
+    container.innerHTML = `
+      <div class="transcript-live" id="transcript-live">
+        <div class="transcript-live-header">Live Session Transcript</div>
+        <div class="transcript-live-messages" id="transcript-live-messages"></div>
+      </div>
+    `;
 
-    this.ws = new WebSocket(url);
+    this._lastTranscriptCount = 0;
+    await this._fetchTranscript(sessionId);
 
-    this.ws.onopen = () => {
-      this.term.writeln('\x1b[2m--- Connected to session ---\x1b[0m');
-    };
+    // Poll for new transcript entries every 2 seconds
+    this._pollInterval = setInterval(() => {
+      this._fetchTranscript(sessionId);
+    }, 2000);
+  },
 
-    this.ws.onmessage = (event) => {
-      if (typeof event.data === 'string') {
-        try {
-          const msg = JSON.parse(event.data);
-          if (msg.type === 'error') {
-            this.term.writeln(`\x1b[31mError: ${msg.message}\x1b[0m`);
-            this.term.writeln('\x1b[2m--- No active terminal for this session ---\x1b[0m');
-            this.term.writeln('\x1b[2mThis session may have been started outside the Command Center.\x1b[0m');
-            return;
-          }
-          if (msg.type === 'pong') return;
-        } catch {
-          // Not JSON, treat as terminal data
-          this.term.write(event.data);
-        }
-      } else if (event.data instanceof Blob) {
-        event.data.arrayBuffer().then(buf => {
-          this.term.write(new Uint8Array(buf));
-        });
-      }
-    };
+  async _fetchTranscript(sessionId) {
+    try {
+      const resp = await fetch(`/api/sessions/${sessionId}/transcript?limit=200`);
+      const data = await resp.json();
+      const transcripts = data.transcripts || [];
 
-    this.ws.onclose = () => {
-      this.term.writeln('\x1b[2m--- Disconnected ---\x1b[0m');
-    };
+      if (transcripts.length === this._lastTranscriptCount) return;
+      this._lastTranscriptCount = transcripts.length;
 
-    this.ws.onerror = () => {
-      this.term.writeln('\x1b[31mWebSocket connection error\x1b[0m');
-    };
+      const container = document.getElementById('transcript-live-messages');
+      if (!container) return;
+
+      container.innerHTML = transcripts.map(t => {
+        const role = t.role || 'unknown';
+        const time = t.timestamp ? this._fmtTime(t.timestamp) : '';
+        const content = this._escapeHTML(t.content || '');
+        const truncated = content.length > 2000 ? content.substring(0, 2000) + '...' : content;
+        return `
+          <div class="transcript-live-msg ${role}">
+            <div class="transcript-live-meta">
+              <span class="transcript-live-role">${role}</span>
+              <span class="transcript-live-time">${time}</span>
+            </div>
+            <div class="transcript-live-content">${truncated}</div>
+          </div>
+        `;
+      }).join('');
+
+      // Auto-scroll to bottom
+      container.scrollTop = container.scrollHeight;
+    } catch (e) {
+      console.error('Failed to fetch transcript:', e);
+    }
   },
 
   close() {
     const overlay = document.getElementById('terminal-overlay');
     overlay.style.display = 'none';
+    this._cleanup();
+    this.currentSessionId = null;
+  },
 
-    if (this.ws) {
-      this.ws.close();
-      this.ws = null;
-    }
-    if (this.term) {
-      this.term.dispose();
-      this.term = null;
-    }
+  _cleanup() {
+    if (this.ws) { this.ws.close(); this.ws = null; }
+    if (this.term) { this.term.dispose(); this.term = null; }
+    if (this.fitAddon) { this.fitAddon = null; }
     if (this._resizeHandler) {
       window.removeEventListener('resize', this._resizeHandler);
+      this._resizeHandler = null;
     }
-    this.currentSessionId = null;
+    if (this._pollInterval) {
+      clearInterval(this._pollInterval);
+      this._pollInterval = null;
+    }
+    this._mode = null;
+    this._lastTranscriptCount = 0;
+    const container = document.getElementById('terminal-container');
+    if (container) container.innerHTML = '';
+  },
+
+  _fmtTime(ts) {
+    try {
+      return new Date(ts).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', second: '2-digit' });
+    } catch { return ''; }
+  },
+
+  _escapeHTML(str) {
+    if (!str) return '';
+    const div = document.createElement('div');
+    div.textContent = str;
+    return div.innerHTML;
   },
 };
 
-// Wire up back button and popout
+// Keep backward compat — dashboard.js calls Terminal.open()
+const Terminal = SessionViewer;
+
+// Wire up buttons
 document.addEventListener('DOMContentLoaded', () => {
   document.getElementById('terminal-back').addEventListener('click', () => {
-    Terminal.close();
+    SessionViewer.close();
   });
 
   document.getElementById('terminal-popout').addEventListener('click', () => {
-    if (Terminal.currentSessionId) {
-      // Open a simple standalone terminal page
-      const url = `/terminal.html?session=${Terminal.currentSessionId}`;
-      window.open(url, '_blank', 'width=1000,height=600');
+    if (SessionViewer.currentSessionId) {
+      window.open(`/terminal.html?session=${SessionViewer.currentSessionId}`, '_blank', 'width=1000,height=600');
     }
   });
 });
