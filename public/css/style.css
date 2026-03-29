@@ -510,7 +510,9 @@ body {
 .chat-msg {
   display: flex;
   gap: 10px;
-  margin-bottom: 16px;
+  margin-bottom: 12px;
+  padding-bottom: 12px;
+  border-bottom: 1px solid var(--border);
 }
 
 .chat-avatar {
@@ -588,26 +590,29 @@ body {
 
 /* Tool call group */
 .tool-group {
-  margin: 4px 0 16px 38px;
-  border: 1px solid var(--border);
-  border-radius: var(--radius);
+  margin: 4px 0 12px 38px;
+  border: 1px solid var(--border-light);
+  border-left: 3px solid #f59e0b;
+  border-radius: 0 var(--radius) var(--radius) 0;
   overflow: hidden;
+  background: var(--surface-1);
 }
 
 .tool-group-header {
   display: flex;
   align-items: center;
   gap: 6px;
-  padding: 6px 12px;
+  padding: 7px 12px;
   background: var(--surface-2);
   font-size: 12px;
-  color: var(--text-dim);
-  font-weight: 500;
+  color: var(--text-secondary);
+  font-weight: 600;
+  border-bottom: 1px solid var(--border);
 }
 
 .tool-group-header .transcript-live-time { margin-left: auto; }
 
-.tool-group-icon { font-size: 12px; opacity: 0.5; }
+.tool-group-icon { font-size: 13px; }
 
 /* Individual tool call */
 .tool-item {
@@ -686,10 +691,17 @@ body {
 
 /* Tool result (output) */
 .tool-result-block {
-  margin: 0 0 4px 38px;
+  margin: 0 0 8px 38px;
   cursor: pointer;
-  border-left: 2px solid var(--surface-5);
+  border-left: 3px solid var(--surface-5);
   padding-left: 10px;
+  padding: 4px 0 4px 10px;
+  border-radius: 0 var(--radius) var(--radius) 0;
+  transition: background var(--transition);
+}
+
+.tool-result-block:hover {
+  background: var(--surface-2);
 }
 
 .tool-result-header {
@@ -704,10 +716,13 @@ body {
 
 .tool-result-label {
   font-size: 10px;
-  font-weight: 600;
+  font-weight: 700;
   text-transform: uppercase;
-  color: var(--text-faint);
-  letter-spacing: 0.3px;
+  color: var(--text-dim);
+  letter-spacing: 0.4px;
+  background: var(--surface-3);
+  padding: 1px 6px;
+  border-radius: 3px;
 }
 
 .tool-result-preview {

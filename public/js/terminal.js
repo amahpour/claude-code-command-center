@@ -233,7 +233,7 @@ const SessionViewer = {
         html += `
           <div class="tool-group">
             <div class="tool-group-header">
-              <span class="tool-group-icon">&#9881;</span>
+              <span class="tool-group-icon">&#128295;</span>
               <span>${toolBlocks.length} tool call${toolBlocks.length > 1 ? 's' : ''}</span>
               <span class="transcript-live-time">${time}</span>
             </div>
@@ -251,7 +251,7 @@ const SessionViewer = {
         <div class="tool-result-block" onclick="this.classList.toggle('expanded')">
           <div class="tool-result-header">
             <span class="tool-chevron">&#9656;</span>
-            <span class="tool-result-label">output</span>
+            <span class="tool-result-label">&#8629; output</span>
             <span class="tool-result-preview">${this._escapeHTML(firstLine)}</span>
           </div>
           <div class="tool-result-body"><pre><code>${this._escapeHTML(raw)}</code></pre></div>
