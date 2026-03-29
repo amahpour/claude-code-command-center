@@ -1,6 +1,6 @@
 """REST API routes for the Claude Code Command Center."""
 
-from fastapi import APIRouter, HTTPException, Query
+from fastapi import APIRouter, HTTPException, Query, Request
 from pydantic import BaseModel
 
 from server import db
@@ -11,13 +11,15 @@ router = APIRouter(prefix="/api")
 
 class HookEvent(BaseModel):
     """Incoming hook event from hook-handler.py."""
+    model_config = {"extra": "allow", "populate_by_name": True}
+
     event_type: str | None = None
     event: str | None = None
     session_id: str | None = None
     tool_name: str | None = None
     cwd: str | None = None
     project_path: str | None = None
-    model: str | None = None
+    session_model: str | None = None
     message: str | None = None
     cost_usd: float | None = None
     input_tokens: int | None = None
@@ -25,8 +27,6 @@ class HookEvent(BaseModel):
     cache_tokens: int | None = None
     context_tokens: int | None = None
     context_max: int | None = None
-
-    model_config = {"extra": "allow"}
 
 
 class NewSessionRequest(BaseModel):
@@ -71,12 +71,9 @@ async def get_transcript(
 
 
 @router.post("/hooks")
-async def receive_hook(event: HookEvent):
+async def receive_hook(request: Request):
     """Receive a hook event from hook-handler.py."""
-    event_data = event.model_dump(exclude_none=True)
-    # Include any extra fields
-    if hasattr(event, "model_extra") and event.model_extra:
-        event_data.update(event.model_extra)
+    event_data = await request.json()
     result = await process_hook_event(event_data)
     if result is None:
         return {"status": "ignored"}

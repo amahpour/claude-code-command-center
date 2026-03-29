@@ -5,12 +5,98 @@
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>Claude Code Command Center</title>
   <link rel="stylesheet" href="/css/style.css">
+  <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/xterm@5.3.0/css/xterm.css">
 </head>
 <body>
   <div id="app">
-    <h1>Claude Code Command Center</h1>
-    <p>Loading...</p>
+    <!-- Top Bar -->
+    <header class="topbar">
+      <div class="topbar-left">
+        <h1 class="topbar-title">Claude Code Command Center</h1>
+      </div>
+      <div class="topbar-stats">
+        <div class="stat">
+          <span class="stat-value" id="active-count">0</span>
+          <span class="stat-label">Active</span>
+        </div>
+        <div class="stat">
+          <span class="stat-value" id="today-cost">$0.00</span>
+          <span class="stat-label">Today</span>
+        </div>
+      </div>
+      <div class="topbar-actions">
+        <button class="btn btn-primary" id="new-session-btn">+ New Session</button>
+      </div>
+    </header>
+
+    <!-- Navigation -->
+    <nav class="nav-tabs">
+      <button class="nav-tab active" data-view="dashboard">Dashboard</button>
+      <button class="nav-tab" data-view="history">History</button>
+      <button class="nav-tab" data-view="analytics">Analytics</button>
+    </nav>
+
+    <!-- Views -->
+    <main class="main-content">
+      <!-- Dashboard View -->
+      <div id="view-dashboard" class="view active">
+        <div class="session-grid" id="session-grid">
+          <div class="empty-state" id="empty-state">
+            <div class="empty-icon">&#9678;</div>
+            <h2>No active sessions</h2>
+            <p>Start a new Claude Code session or wait for hook events.</p>
+          </div>
+        </div>
+      </div>
+
+      <!-- History View -->
+      <div id="view-history" class="view">
+        <!-- Populated by history.js -->
+      </div>
+
+      <!-- Analytics View -->
+      <div id="view-analytics" class="view">
+        <!-- Populated by analytics.js -->
+      </div>
+    </main>
+
+    <!-- Terminal Overlay -->
+    <div class="terminal-overlay" id="terminal-overlay" style="display:none">
+      <div class="terminal-header">
+        <button class="btn btn-sm" id="terminal-back">&larr; Back to Dashboard</button>
+        <span class="terminal-title" id="terminal-title">Terminal</span>
+        <button class="btn btn-sm" id="terminal-popout">Open in new tab</button>
+      </div>
+      <div class="terminal-container" id="terminal-container"></div>
+    </div>
+
+    <!-- New Session Modal -->
+    <div class="modal-overlay" id="new-session-modal" style="display:none">
+      <div class="modal">
+        <h2>New Session</h2>
+        <div class="form-group">
+          <label for="project-dir">Project Directory</label>
+          <input type="text" id="project-dir" placeholder="/path/to/project" class="input">
+        </div>
+        <div class="form-group">
+          <label for="session-prompt">Initial Prompt (optional)</label>
+          <textarea id="session-prompt" placeholder="What should Claude work on?" class="input textarea"></textarea>
+        </div>
+        <div class="modal-actions">
+          <button class="btn" id="modal-cancel">Cancel</button>
+          <button class="btn btn-primary" id="modal-launch">Launch</button>
+        </div>
+      </div>
+    </div>
   </div>
+
+  <script src="https://cdn.jsdelivr.net/npm/xterm@5.3.0/lib/xterm.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/xterm-addon-fit@0.8.0/lib/xterm-addon-fit.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/xterm-addon-web-links@0.9.0/lib/xterm-addon-web-links.js"></script>
   <script src="/js/app.js"></script>
+  <script src="/js/dashboard.js"></script>
+  <script src="/js/terminal.js"></script>
+  <script src="/js/history.js"></script>
+  <script src="/js/analytics.js"></script>
 </body>
 </html>

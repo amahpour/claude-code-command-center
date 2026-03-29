@@ -29,7 +29,8 @@ async def broadcast_session_update(session: dict):
         except Exception:
             disconnected.add(ws)
 
-    _dashboard_clients -= disconnected
+    for ws in disconnected:
+        _dashboard_clients.discard(ws)
 
 
 @router.websocket("/ws/dashboard")
