@@ -255,6 +255,11 @@ body {
   text-overflow: ellipsis;
   white-space: nowrap;
   letter-spacing: -0.2px;
+  cursor: text;
+}
+
+.card-project:hover {
+  color: var(--accent-hover);
 }
 
 .card-status-label {
@@ -355,11 +360,27 @@ body {
 
 .card-footer {
   display: flex;
-  flex-wrap: wrap;
-  gap: 6px;
+  justify-content: space-between;
   align-items: center;
   font-size: 12px;
   color: var(--text-dim);
+}
+
+.card-footer-left {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  align-items: center;
+}
+
+.card-path {
+  font-size: 10px;
+  font-family: var(--font-mono);
+  color: var(--text-faint);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  max-width: 150px;
 }
 
 .card-cost {

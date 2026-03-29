@@ -108,10 +108,13 @@ const Dashboard = {
     // Friendly model name
     const modelShort = model.replace('claude-', '').replace('-4-6', ' 4.6').replace('-4-5', ' 4.5');
 
+    const displayTitle = s.display_name || s.project_name || s.id;
+    const projectPath = s.project_path ? s.project_path.replace(/^\/Users\/[^/]+\//, '~/') : '';
+
     return `
       <div class="card-header">
         <span class="status-dot ${status}"></span>
-        <span class="card-project">${this._escapeHTML(s.project_name || s.id)}</span>
+        <span class="card-project" onclick="event.stopPropagation(); Dashboard.editDisplayName('${this._escapeHTML(s.id)}', '${this._escapeHTML(displayTitle)}')" title="Click to rename">${this._escapeHTML(displayTitle)}</span>
         <span class="card-status-label ${status}">${status}</span>
       </div>
       ${sessionName}
@@ -131,13 +134,16 @@ const Dashboard = {
         </div>
       </div>
       <div class="card-footer">
-        <span class="card-cost">$${(s.cost_usd || 0).toFixed(4)}</span>
-        <span>${duration}</span>
-        <span class="card-ticket-area">
-          ${ticketTag}
-          <button class="card-ticket-edit" onclick="event.stopPropagation(); Dashboard.editTicketId('${this._escapeHTML(s.id)}', '${this._escapeHTML(s.ticket_id || '')}')" title="Edit ticket ID">&#9998;</button>
+        <span class="card-footer-left">
+          <span class="card-cost">$${(s.cost_usd || 0).toFixed(4)}</span>
+          <span>${duration}</span>
+          <span class="card-ticket-area">
+            ${ticketTag}
+            <button class="card-ticket-edit" onclick="event.stopPropagation(); Dashboard.editTicketId('${this._escapeHTML(s.id)}', '${this._escapeHTML(s.ticket_id || '')}')" title="Edit ticket ID">&#9998;</button>
+          </span>
+          ${prLink}
         </span>
-        ${prLink}
+        ${projectPath ? `<span class="card-path" title="${this._escapeHTML(s.project_path)}">${this._escapeHTML(projectPath)}</span>` : ''}
       </div>
     `;
   },
@@ -154,6 +160,24 @@ const Dashboard = {
     } catch {
       return '-';
     }
+  },
+
+  editDisplayName(sessionId, currentValue) {
+    const newValue = prompt('Rename session:', currentValue);
+    if (newValue === null) return;
+    fetch(`/api/sessions/${sessionId}`, {
+      method: 'PATCH',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ display_name: newValue.trim() || '' }),
+    })
+    .then(r => r.json())
+    .then(data => {
+      if (data.session) {
+        App.sessions[data.session.id] = data.session;
+        this.updateCard(data.session);
+      }
+    })
+    .catch(e => console.error('Failed to rename session:', e));
   },
 
   editTicketId(sessionId, currentValue) {
