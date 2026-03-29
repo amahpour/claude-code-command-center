@@ -62,86 +62,89 @@ async def process_hook_event(event_data: dict) -> dict | None:
         return None
 
     now = datetime.now(timezone.utc).isoformat()
+    project_path = event_data.get("cwd") or event_data.get("project_path")
     session = await db.get_session(session_id)
 
     # Ensure session exists before recording event (FK constraint)
     if session is None:
-        if event_type == "SessionStart":
-            project_path = event_data.get("cwd") or event_data.get("project_path")
-            session = await db.create_session(
-                session_id,
-                project_path=project_path,
-                model=event_data.get("model"),
-            )
-        else:
-            session = await db.create_session(session_id)
+        session = await db.create_session(
+            session_id,
+            project_path=project_path,
+            model=event_data.get("model"),
+        )
 
     # Record the event (session now guaranteed to exist)
     await db.add_event(session_id, event_type, tool_name=tool_name, payload=payload)
 
-    # Session is guaranteed to exist at this point.
-    # Now apply event-specific updates.
+    # Always update project info from cwd if we have it and session is missing it
+    base_updates: dict = {"last_activity_at": now}
+    if project_path and not session.get("project_name"):
+        base_updates["project_path"] = project_path
+        base_updates["project_name"] = project_path.rsplit("/", 1)[-1] if "/" in project_path else project_path
+        git_branch = _extract_git_branch(project_path)
+        if git_branch:
+            base_updates["git_branch"] = git_branch
+
+    # Apply event-specific updates on top of base updates
 
     if event_type == "SessionStart":
-        project_path = event_data.get("cwd") or event_data.get("project_path")
         model = event_data.get("model")
         git_branch = _extract_git_branch(project_path)
-        updates = {"last_activity_at": now, "status": "idle"}
+        base_updates["status"] = "idle"
         if project_path:
-            updates["project_path"] = project_path
-            updates["project_name"] = project_path.rsplit("/", 1)[-1] if "/" in project_path else project_path
+            base_updates["project_path"] = project_path
+            base_updates["project_name"] = project_path.rsplit("/", 1)[-1] if "/" in project_path else project_path
         if model:
-            updates["model"] = model
+            base_updates["model"] = model
         if git_branch:
-            updates["git_branch"] = git_branch
-        session = await db.update_session(session_id, **updates)
+            base_updates["git_branch"] = git_branch
+        session = await db.update_session(session_id, **base_updates)
 
     elif event_type == "PreToolUse":
-        session = await db.update_session(
-            session_id, status="working", last_activity_at=now
-        )
+        base_updates["status"] = "working"
+        session = await db.update_session(session_id, **base_updates)
 
     elif event_type == "PostToolUse":
-        session = await db.update_session(session_id, last_activity_at=now)
+        session = await db.update_session(session_id, **base_updates)
 
     elif event_type == "Stop":
-        updates: dict = {"status": "idle", "last_activity_at": now}
+        base_updates["status"] = "idle"
         if "cost_usd" in event_data:
-            updates["cost_usd"] = event_data["cost_usd"]
+            base_updates["cost_usd"] = event_data["cost_usd"]
         if "input_tokens" in event_data:
-            updates["input_tokens"] = event_data["input_tokens"]
+            base_updates["input_tokens"] = event_data["input_tokens"]
         if "output_tokens" in event_data:
-            updates["output_tokens"] = event_data["output_tokens"]
+            base_updates["output_tokens"] = event_data["output_tokens"]
         if "cache_tokens" in event_data:
-            updates["cache_tokens"] = event_data["cache_tokens"]
+            base_updates["cache_tokens"] = event_data["cache_tokens"]
         if "context_tokens" in event_data:
-            updates["context_tokens"] = event_data["context_tokens"]
+            base_updates["context_tokens"] = event_data["context_tokens"]
             max_ctx = event_data.get("context_max", 200000)
-            updates["context_max"] = max_ctx
+            base_updates["context_max"] = max_ctx
             if max_ctx > 0:
-                updates["context_usage_percent"] = (event_data["context_tokens"] / max_ctx) * 100
-        session = await db.update_session(session_id, **updates)
+                base_updates["context_usage_percent"] = (event_data["context_tokens"] / max_ctx) * 100
+        session = await db.update_session(session_id, **base_updates)
 
     elif event_type == "SubagentStart":
-        session = await db.update_session(session_id, last_activity_at=now)
+        session = await db.update_session(session_id, **base_updates)
 
     elif event_type == "SubagentStop":
-        session = await db.update_session(session_id, last_activity_at=now)
+        session = await db.update_session(session_id, **base_updates)
 
     elif event_type == "Notification":
-        updates = {"last_activity_at": now, "status": "waiting"}
+        base_updates["status"] = "waiting"
         message = event_data.get("message", "")
         if message:
-            updates["task_description"] = message
-        session = await db.update_session(session_id, **updates)
+            base_updates["task_description"] = message
+        session = await db.update_session(session_id, **base_updates)
 
     elif event_type == "SessionEnd":
-        session = await db.update_session(
-            session_id, status="completed", ended_at=now, last_activity_at=now
-        )
+        base_updates["status"] = "completed"
+        base_updates["ended_at"] = now
+        session = await db.update_session(session_id, **base_updates)
 
     else:
-        session = await db.update_session(session_id, last_activity_at=now)
+        session = await db.update_session(session_id, **base_updates)
 
     if session:
         await _notify_update(session)

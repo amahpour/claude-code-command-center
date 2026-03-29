@@ -23,7 +23,14 @@ _watcher_task: asyncio.Task | None = None
 
 
 def _parse_jsonl_entry(line: str) -> dict | None:
-    """Parse a single JSONL line into a structured entry."""
+    """Parse a single JSONL line into a structured entry.
+
+    Handles the real Claude Code JSONL format:
+    - type: "user" — user messages, content is a string or in nested structure
+    - type: "assistant" — assistant messages with message.content, message.model, message.usage
+    - type: "system" — system messages (skipped for transcripts, but may have metadata)
+    - type: "file-history-snapshot", "queue-operation" — internal (skipped)
+    """
     try:
         data = json.loads(line.strip())
     except (json.JSONDecodeError, ValueError):
@@ -32,39 +39,80 @@ def _parse_jsonl_entry(line: str) -> dict | None:
     if not isinstance(data, dict):
         return None
 
+    msg_type = data.get("type", "")
+
+    # Skip non-conversation entries
+    if msg_type in ("file-history-snapshot", "queue-operation", "system"):
+        # But extract metadata from system entries if useful
+        return None
+
     entry = {
         "role": None,
         "content": None,
         "token_count": None,
         "timestamp": data.get("timestamp"),
+        # Metadata for session enrichment
+        "model": None,
+        "git_branch": data.get("gitBranch"),
+        "session_id": data.get("sessionId"),
+        "cwd": data.get("cwd"),
+        "usage": None,
     }
 
-    # Handle different JSONL formats
-    msg_type = data.get("type", "")
     message = data.get("message", {})
+    if not isinstance(message, dict):
+        message = {}
 
-    if msg_type in ("user", "human"):
+    if msg_type == "user":
         entry["role"] = "user"
-        entry["content"] = _extract_content(message.get("content", ""))
+        # User messages: content can be top-level or in message
+        content = data.get("content") or message.get("content", "")
+        # Skip meta-only user entries (tool results, etc.)
+        if data.get("isMeta") and not content:
+            return None
+        # Handle tool results embedded in user entries
+        tool_result = data.get("toolUseResult")
+        if tool_result:
+            if isinstance(tool_result, dict):
+                stdout = tool_result.get("stdout", "")
+                stderr = tool_result.get("stderr", "")
+                content = stdout or stderr or str(tool_result)
+            elif isinstance(tool_result, str):
+                content = tool_result
+            entry["role"] = "tool_result"
+        entry["content"] = _extract_content(content)
+
     elif msg_type == "assistant":
         entry["role"] = "assistant"
         content = message.get("content", "")
         entry["content"] = _extract_content(content)
+        entry["model"] = message.get("model")
+
+        # Extract token usage
+        usage = message.get("usage", {})
+        if usage:
+            input_tokens = usage.get("input_tokens", 0)
+            output_tokens = usage.get("output_tokens", 0)
+            cache_creation = usage.get("cache_creation_input_tokens", 0)
+            cache_read = usage.get("cache_read_input_tokens", 0)
+            entry["token_count"] = input_tokens + output_tokens
+            entry["usage"] = {
+                "input_tokens": input_tokens + cache_creation + cache_read,
+                "output_tokens": output_tokens,
+                "cache_tokens": cache_creation + cache_read,
+            }
+
     elif msg_type == "tool_result":
         entry["role"] = "tool_result"
         entry["content"] = _extract_content(data.get("content", ""))
+
     elif msg_type == "result":
         entry["role"] = "assistant"
-        result = data.get("result", "")
-        entry["content"] = _extract_content(result)
+        entry["content"] = _extract_content(data.get("result", ""))
+
     elif "role" in message:
         entry["role"] = message["role"]
         entry["content"] = _extract_content(message.get("content", ""))
-
-    # Extract token counts if present
-    usage = data.get("usage", {})
-    if usage:
-        entry["token_count"] = usage.get("input_tokens", 0) + usage.get("output_tokens", 0)
 
     if entry["role"] is None or entry["content"] is None:
         return None
@@ -88,7 +136,6 @@ def _extract_content(content) -> str | None:
                 elif item.get("type") == "tool_use":
                     name = item.get("name", "unknown")
                     inp = json.dumps(item.get("input", {}), ensure_ascii=False)
-                    # Truncate large inputs
                     if len(inp) > 500:
                         inp = inp[:500] + "..."
                     parts.append(f"[Tool: {name}] {inp}")
@@ -110,12 +157,23 @@ def _extract_content(content) -> str | None:
     return str(content) if content else None
 
 
-def _session_id_from_path(file_path: str) -> str | None:
-    """Extract a session identifier from a JSONL file path.
+def _infer_context_max(model: str | None) -> int:
+    """Infer the max context window size from the model name."""
+    if not model:
+        return 200000
+    m = model.lower()
+    # Models with 1M context: opus 4.6 with [1m], or any model ID containing "1m"
+    if "opus" in m:
+        return 1000000  # Opus 4.6 defaults to 1M
+    if "sonnet" in m:
+        return 200000
+    if "haiku" in m:
+        return 200000
+    return 200000
 
-    Claude Code JSONL files are typically at:
-    ~/.claude/projects/<project-hash>/<session-id>.jsonl
-    """
+
+def _session_id_from_path(file_path: str) -> str | None:
+    """Extract a session identifier from a JSONL file path."""
     p = Path(file_path)
     if p.suffix != ".jsonl":
         return None
@@ -123,7 +181,11 @@ def _session_id_from_path(file_path: str) -> str | None:
 
 
 async def _process_file_changes(file_path: str):
-    """Read new lines from a JSONL file and store as transcripts."""
+    """Read new lines from a JSONL file and store as transcripts.
+
+    Also enriches session data with model, usage, and git branch info
+    extracted from the JSONL entries.
+    """
     session_id = _session_id_from_path(file_path)
     if not session_id:
         return
@@ -147,6 +209,14 @@ async def _process_file_changes(file_path: str):
     if session is None:
         await db.create_session(session_id, project_path=str(Path(file_path).parent))
 
+    # Track latest usage from new entries (not cumulative — use most recent snapshot)
+    latest_input = 0
+    latest_output = 0
+    latest_cache = 0
+    model = None
+    git_branch = None
+    cwd = None
+
     for line in new_lines:
         line = line.strip()
         if not line:
@@ -154,6 +224,20 @@ async def _process_file_changes(file_path: str):
         entry = _parse_jsonl_entry(line)
         if entry is None:
             continue
+
+        # Collect metadata for session enrichment
+        if entry.get("model"):
+            model = entry["model"]
+        if entry.get("git_branch"):
+            git_branch = entry["git_branch"]
+        if entry.get("cwd"):
+            cwd = entry["cwd"]
+        # Use latest usage snapshot (each assistant message reports current context size)
+        if entry.get("usage"):
+            latest_input = entry["usage"]["input_tokens"]
+            latest_output = entry["usage"]["output_tokens"]
+            latest_cache = entry["usage"]["cache_tokens"]
+
         await db.add_transcript(
             session_id=session_id,
             role=entry["role"],
@@ -162,6 +246,31 @@ async def _process_file_changes(file_path: str):
             token_count=entry.get("token_count"),
             timestamp=entry.get("timestamp"),
         )
+
+    # Enrich session with discovered metadata
+    session_updates = {}
+    if model:
+        session_updates["model"] = model
+    if git_branch:
+        session_updates["git_branch"] = git_branch
+    if cwd:
+        session_updates["project_path"] = cwd
+        project_name = cwd.rsplit("/", 1)[-1] if "/" in cwd else cwd
+        session_updates["project_name"] = project_name
+    if latest_input > 0 or latest_cache > 0:
+        # The latest message's input+cache tokens = current context window size
+        context_tokens = latest_input + latest_cache
+        session_updates["input_tokens"] = latest_input
+        session_updates["output_tokens"] = latest_output
+        session_updates["cache_tokens"] = latest_cache
+        session_updates["context_tokens"] = context_tokens
+        # Infer max context from model name
+        max_ctx = _infer_context_max(model)
+        session_updates["context_max"] = max_ctx
+        session_updates["context_usage_percent"] = min((context_tokens / max_ctx) * 100, 100)
+
+    if session_updates:
+        await db.update_session(session_id, **session_updates)
 
 
 async def _debounced_process(file_path: str):
@@ -215,7 +324,6 @@ def stop_watcher():
     if _watcher_task and not _watcher_task.done():
         _watcher_task.cancel()
         _watcher_task = None
-    # Cancel any pending debounce tasks
     for task in _debounce_tasks.values():
         if not task.done():
             task.cancel()

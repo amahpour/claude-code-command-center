@@ -96,12 +96,19 @@ def test_parse_empty_content():
 def test_parse_with_usage():
     line = json.dumps({
         "type": "assistant",
-        "message": {"role": "assistant", "content": "Hello"},
-        "usage": {"input_tokens": 100, "output_tokens": 50},
+        "message": {
+            "role": "assistant",
+            "content": "Hello",
+            "model": "claude-opus-4-6",
+            "usage": {"input_tokens": 100, "output_tokens": 50},
+        },
     })
     entry = _parse_jsonl_entry(line)
     assert entry is not None
     assert entry["token_count"] == 150
+    assert entry["model"] == "claude-opus-4-6"
+    assert entry["usage"]["input_tokens"] == 100
+    assert entry["usage"]["output_tokens"] == 50
 
 
 def test_extract_content_string():
