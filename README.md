@@ -2,6 +2,10 @@
 
 A web-based command center for monitoring and managing multiple Claude Code sessions in real-time.
 
+![Dashboard](docs/dashboard.png)
+
+![Live Transcript](docs/transcript.png)
+
 ## Features
 
 - **Live Dashboard** — At-a-glance view of all active Claude Code sessions with status indicators, context usage, and cost tracking
