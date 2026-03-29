@@ -117,7 +117,7 @@ const SessionViewer = {
       </div>
     `;
 
-    this._lastTranscriptCount = 0;
+    this._lastTranscriptId = 0;
     await this._fetchTranscript(sessionId);
 
     // Poll for new transcript entries every 2 seconds
@@ -132,8 +132,10 @@ const SessionViewer = {
       const data = await resp.json();
       const transcripts = data.transcripts || [];
 
-      if (transcripts.length === this._lastTranscriptCount) return;
-      this._lastTranscriptCount = transcripts.length;
+      // Detect changes by comparing last entry's ID
+      const lastId = transcripts.length > 0 ? transcripts[transcripts.length - 1].id : 0;
+      if (lastId === this._lastTranscriptId) return;
+      this._lastTranscriptId = lastId;
 
       const container = document.getElementById('transcript-live-messages');
       if (!container) return;
@@ -167,7 +169,7 @@ const SessionViewer = {
       this._pollInterval = null;
     }
     this._mode = null;
-    this._lastTranscriptCount = 0;
+    this._lastTranscriptId = 0;
     const container = document.getElementById('terminal-container');
     if (container) container.innerHTML = '';
   },
@@ -177,7 +179,7 @@ const SessionViewer = {
     const time = t.timestamp ? this._fmtTime(t.timestamp) : '';
     const raw = t.content || '';
 
-    // Assistant messages with tool calls: split on [Tool: Name] lines
+    // Assistant messages with tool calls
     if (role === 'assistant' && raw.includes('[Tool:')) {
       const lines = raw.split('\n');
       const blocks = [];
@@ -186,13 +188,11 @@ const SessionViewer = {
       for (const line of lines) {
         const toolMatch = line.match(/^\[Tool: (.+)\]$/);
         if (toolMatch) {
-          // Flush previous block
           if (currentBlock) blocks.push(currentBlock);
           currentBlock = { type: 'tool_call', name: toolMatch[1], lines: [] };
         } else if (currentBlock && currentBlock.type === 'tool_call') {
           currentBlock.lines.push(line);
         } else {
-          // Text before any tool call
           if (!currentBlock || currentBlock.type !== 'text') {
             if (currentBlock) blocks.push(currentBlock);
             currentBlock = { type: 'text', lines: [] };
@@ -202,49 +202,92 @@ const SessionViewer = {
       }
       if (currentBlock) blocks.push(currentBlock);
 
-      return blocks.map(b => {
-        const content = b.lines.join('\n').trim();
-        if (!content && b.type === 'text') return '';
-        if (b.type === 'text') {
-          return this._msgHTML('assistant', time, this._fmtText(content));
-        }
-        return `
-          <div class="transcript-live-msg tool_call">
-            <div class="transcript-live-meta">
-              <span class="transcript-live-role">${this._escapeHTML(b.name)}</span>
+      // Separate text blocks from tool blocks
+      const textBlocks = blocks.filter(b => b.type === 'text' && b.lines.join('\n').trim());
+      const toolBlocks = blocks.filter(b => b.type === 'tool_call');
+      let html = '';
+
+      // Render text part as assistant message
+      if (textBlocks.length > 0) {
+        const textContent = textBlocks.map(b => b.lines.join('\n').trim()).join('\n');
+        html += this._chatBubble('assistant', 'A', time, this._fmtText(textContent));
+      }
+
+      // Render tool calls as a grouped block
+      if (toolBlocks.length > 0) {
+        const toolItems = toolBlocks.map(b => {
+          const content = b.lines.join('\n').trim();
+          const preview = this._toolPreview(b.name, content);
+          const uid = Math.random().toString(36).slice(2, 8);
+          return `
+            <div class="tool-item" onclick="this.classList.toggle('expanded')">
+              <div class="tool-item-header">
+                <span class="tool-chevron">&#9656;</span>
+                <span class="tool-name-badge">${this._escapeHTML(b.name)}</span>
+                <span class="tool-preview">${this._escapeHTML(preview)}</span>
+              </div>
+              <div class="tool-item-body"><pre><code>${this._escapeHTML(content)}</code></pre></div>
+            </div>`;
+        }).join('');
+
+        html += `
+          <div class="tool-group">
+            <div class="tool-group-header">
+              <span class="tool-group-icon">&#9881;</span>
+              <span>${toolBlocks.length} tool call${toolBlocks.length > 1 ? 's' : ''}</span>
               <span class="transcript-live-time">${time}</span>
             </div>
-            <div class="transcript-live-content"><pre><code>${this._escapeHTML(content)}</code></pre></div>
+            ${toolItems}
           </div>`;
-      }).join('');
+      }
+      return html;
     }
 
-    // Tool results
+    // Tool results — collapsible
     if (role === 'tool_result') {
-      const truncated = raw.length > 1500 ? raw.substring(0, 1500) + '...' : raw;
+      const uid = Math.random().toString(36).slice(2, 8);
+      const firstLine = raw.split('\n')[0].substring(0, 120);
       return `
-        <div class="transcript-live-msg tool_result">
-          <div class="transcript-live-meta">
-            <span class="transcript-live-role">result</span>
-            <span class="transcript-live-time">${time}</span>
+        <div class="tool-result-block" onclick="this.classList.toggle('expanded')">
+          <div class="tool-result-header">
+            <span class="tool-chevron">&#9656;</span>
+            <span class="tool-result-label">output</span>
+            <span class="tool-result-preview">${this._escapeHTML(firstLine)}</span>
           </div>
-          <div class="transcript-live-content"><pre><code>${this._escapeHTML(truncated)}</code></pre></div>
+          <div class="tool-result-body"><pre><code>${this._escapeHTML(raw)}</code></pre></div>
         </div>`;
     }
 
-    // Regular messages (user, plain assistant)
-    return this._msgHTML(role, time, this._fmtText(raw));
+    // User message
+    if (role === 'user') {
+      return this._chatBubble('user', 'U', time, this._fmtText(raw));
+    }
+
+    // Plain assistant message
+    return this._chatBubble('assistant', 'A', time, this._fmtText(raw));
   },
 
-  _msgHTML(role, time, content) {
+  _chatBubble(role, avatar, time, content) {
+    const avatarClass = role === 'user' ? 'avatar-user' : 'avatar-assistant';
     return `
-      <div class="transcript-live-msg ${role}">
-        <div class="transcript-live-meta">
-          <span class="transcript-live-role">${role}</span>
-          <span class="transcript-live-time">${time}</span>
+      <div class="chat-msg ${role}">
+        <div class="chat-avatar ${avatarClass}">${avatar}</div>
+        <div class="chat-body">
+          <div class="chat-header">
+            <span class="chat-role">${role === 'user' ? 'User' : 'Assistant'}</span>
+            <span class="chat-time">${time}</span>
+          </div>
+          <div class="chat-content">${content}</div>
         </div>
-        <div class="transcript-live-content">${content}</div>
       </div>`;
+  },
+
+  _toolPreview(name, content) {
+    const firstLine = content.split('\n')[0].trim();
+    if (name === 'Bash' && firstLine.startsWith('$')) return firstLine;
+    if (name === 'Read' || name === 'Write' || name === 'Edit') return firstLine;
+    if (name === 'Grep' || name === 'Glob') return firstLine;
+    return firstLine.substring(0, 100);
   },
 
   _fmtText(text) {
