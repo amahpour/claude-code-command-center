@@ -368,6 +368,7 @@ const Terminal = SessionViewer;
 document.addEventListener('DOMContentLoaded', () => {
   document.getElementById('terminal-back').addEventListener('click', () => {
     SessionViewer.close();
+    window.history.back();
   });
 
   document.getElementById('terminal-popout').addEventListener('click', () => {

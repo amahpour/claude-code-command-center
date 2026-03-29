@@ -14,6 +14,44 @@ const App = {
     this.setupModal();
     this.connectWebSocket();
     this.loadInitialData();
+    this.setupHistory();
+  },
+
+  // ---- Browser History (back/forward) ----
+  setupHistory() {
+    // Handle back/forward buttons
+    window.addEventListener('popstate', (e) => {
+      const state = e.state || { view: 'dashboard' };
+      if (state.view === 'session' && state.sessionId) {
+        // Reopen session transcript without pushing another state
+        this._openSessionDirect(state.sessionId, state.sessionTitle);
+      } else {
+        // Close any open transcript and switch view
+        if (typeof SessionViewer !== 'undefined') SessionViewer.close();
+        this._switchViewDirect(state.view || 'dashboard');
+      }
+    });
+
+    // Set initial state
+    window.history.replaceState({ view: 'dashboard' }, '', '#dashboard');
+  },
+
+  _openSessionDirect(sessionId, title) {
+    if (typeof SessionViewer !== 'undefined') {
+      SessionViewer.open(sessionId, title);
+    }
+  },
+
+  _switchViewDirect(view) {
+    this.currentView = view;
+    document.querySelectorAll('.nav-tab').forEach(t => t.classList.remove('active'));
+    const tab = document.querySelector(`.nav-tab[data-view="${view}"]`);
+    if (tab) tab.classList.add('active');
+    document.querySelectorAll('.view').forEach(v => v.classList.remove('active'));
+    const el = document.getElementById(`view-${view}`);
+    if (el) el.classList.add('active');
+    if (view === 'history' && typeof History !== 'undefined') History.load();
+    else if (view === 'analytics' && typeof Analytics !== 'undefined') Analytics.load();
   },
 
   // ---- Navigation ----
@@ -27,20 +65,9 @@ const App = {
   },
 
   switchView(view) {
-    this.currentView = view;
-
-    document.querySelectorAll('.nav-tab').forEach(t => t.classList.remove('active'));
-    document.querySelector(`.nav-tab[data-view="${view}"]`).classList.add('active');
-
-    document.querySelectorAll('.view').forEach(v => v.classList.remove('active'));
-    document.getElementById(`view-${view}`).classList.add('active');
-
-    // Trigger view-specific loading
-    if (view === 'history' && typeof History !== 'undefined') {
-      History.load();
-    } else if (view === 'analytics' && typeof Analytics !== 'undefined') {
-      Analytics.load();
-    }
+    if (typeof SessionViewer !== 'undefined') SessionViewer.close();
+    this._switchViewDirect(view);
+    window.history.pushState({ view }, '', `#${view}`);
   },
 
   // ---- Modal ----

@@ -35,9 +35,14 @@ const Dashboard = {
     card.dataset.sessionId = session.id;
     card.innerHTML = this._cardHTML(session);
     card.addEventListener('click', () => {
+      const title = session.project_name || session.id;
       if (typeof Terminal !== 'undefined') {
-        Terminal.open(session.id, session.project_name || session.id);
+        Terminal.open(session.id, title);
       }
+      window.history.pushState(
+        { view: 'session', sessionId: session.id, sessionTitle: title },
+        '', `#session/${session.id}`
+      );
     });
     return card;
   },
