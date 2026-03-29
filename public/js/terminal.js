@@ -291,65 +291,12 @@ const SessionViewer = {
   },
 
   _fmtText(text) {
+    if (typeof marked !== 'undefined') {
+      return marked.parse(text, { breaks: true, gfm: true });
+    }
+    // Fallback if marked.js not loaded
     let s = this._escapeHTML(text);
-    // Code blocks first (preserve newlines inside)
-    s = s.replace(/```(\w*)\n?([\s\S]*?)```/g, '<pre><code>$2</code></pre>');
-    // Split on pre blocks to only process non-code sections
-    const parts = s.split(/(<pre>[\s\S]*?<\/pre>)/);
-    s = parts.map(p => {
-      if (p.startsWith('<pre>')) return p;
-      // Tables — convert pipe-delimited rows
-      p = p.replace(/((?:^\|.+\|\s*$\n?)+)/gm, (match) => {
-        const rows = match.trim().split('\n').filter(r => r.trim());
-        if (rows.length < 2) return match;
-        // Check if second row is a separator (|---|---|)
-        const isSep = (r) => /^\|[\s\-:]+\|/.test(r);
-        const parseRow = (r) => r.split('|').slice(1, -1).map(c => c.trim());
-        let html = '<table class="md-table">';
-        let startData = 0;
-        if (isSep(rows[1])) {
-          // First row is header
-          html += '<thead><tr>' + parseRow(rows[0]).map(c => `<th>${c}</th>`).join('') + '</tr></thead>';
-          startData = 2;
-        }
-        html += '<tbody>';
-        for (let i = startData; i < rows.length; i++) {
-          if (isSep(rows[i])) continue;
-          html += '<tr>' + parseRow(rows[i]).map(c => `<td>${c}</td>`).join('') + '</tr>';
-        }
-        html += '</tbody></table>';
-        return html;
-      });
-      // Headings
-      p = p.replace(/^### (.+)$/gm, '<h4>$1</h4>');
-      p = p.replace(/^## (.+)$/gm, '<h3>$1</h3>');
-      p = p.replace(/^# (.+)$/gm, '<h2>$1</h2>');
-      // Horizontal rules
-      p = p.replace(/^---+$/gm, '<hr>');
-      // Inline formatting
-      p = p.replace(/`([^`]+)`/g, '<code>$1</code>');
-      p = p.replace(/\*\*([^*]+)\*\*/g, '<strong>$1</strong>');
-      // Markdown links [text](url)
-      p = p.replace(/\[([^\]]+)\]\(([^)]+)\)/g, '<a href="$2" target="_blank" rel="noopener">$1</a>');
-      // List items (- or * at start of line)
-      p = p.replace(/^[\-\*] (.+)$/gm, '<li>$1</li>');
-      p = p.replace(/(<li>.*<\/li>\n?)+/g, '<ul>$&</ul>');
-      // Numbered lists
-      p = p.replace(/^\d+\. (.+)$/gm, '<li>$1</li>');
-      // Newlines to <br> for remaining text
-      p = p.replace(/\n/g, '<br>');
-      // Collapse multiple <br> into one
-      p = p.replace(/(<br>){2,}/g, '<br>');
-      // Remove <br> adjacent to any block element
-      p = p.replace(/<br>(<(?:h[234]|hr|ul|ol|table|li|\/ul|\/ol|\/table|\/li)[\s>])/gi, '$1');
-      p = p.replace(/(<\/(?:h[234]|ul|ol|table|li)>)<br>/gi, '$1');
-      p = p.replace(/<br>(<hr>)/g, '$1');
-      p = p.replace(/(<hr>)<br>/g, '$1');
-      // Remove leading/trailing <br>
-      p = p.replace(/^(<br>)+/, '');
-      p = p.replace(/(<br>)+$/, '');
-      return p;
-    }).join('');
+    s = s.replace(/\n/g, '<br>');
     return s;
   },
 

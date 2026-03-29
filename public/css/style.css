@@ -771,34 +771,38 @@ body {
 }
 
 .chat-content strong { color: var(--text); font-weight: 600; }
-.chat-content h2 { font-size: 16px; font-weight: 700; color: var(--text); margin: 4px 0 2px; }
+.chat-content p { margin: 0 0 4px; }
+.chat-content p:last-child { margin-bottom: 0; }
+.chat-content h1, .chat-content h2 { font-size: 16px; font-weight: 700; color: var(--text); margin: 6px 0 2px; }
 .chat-content h3 { font-size: 14px; font-weight: 700; color: var(--text); margin: 4px 0 2px; }
 .chat-content h4 { font-size: 13px; font-weight: 700; color: var(--text); margin: 2px 0 1px; }
 .chat-content hr { border: none; border-top: 1px solid var(--border-light); margin: 6px 0; }
 .chat-content ul, .chat-content ol { margin: 2px 0; padding-left: 20px; }
 .chat-content li { margin-bottom: 1px; }
-.chat-content .md-table {
+.chat-content blockquote { margin: 4px 0; padding: 4px 12px; border-left: 3px solid var(--border-light); color: var(--text-dim); }
+.chat-content a { color: var(--accent-hover); }
+.chat-content table {
   width: 100%;
   border-collapse: collapse;
   margin: 8px 0;
   font-size: 13px;
 }
-.chat-content .md-table th,
-.chat-content .md-table td {
+.chat-content table th,
+.chat-content table td {
   padding: 6px 10px;
   border: 1px solid var(--border-light);
   text-align: left;
 }
-.chat-content .md-table th {
+.chat-content table th {
   background: var(--surface-3);
   font-weight: 600;
   color: var(--text);
   font-size: 12px;
 }
-.chat-content .md-table td {
+.chat-content table td {
   background: var(--surface-1);
 }
-.chat-content .md-table tr:hover td {
+.chat-content table tr:hover td {
   background: var(--surface-2);
 }
 
