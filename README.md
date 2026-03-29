@@ -144,6 +144,10 @@ scripts/
   hook-handler.py  — Hook event forwarder
 ```
 
+## Acknowledgments
+
+Inspired by Marc Nuri's [AI Coding Agent Dashboard](https://blog.marcnuri.com/ai-coding-agent-dashboard).
+
 ## License
 
 MIT
