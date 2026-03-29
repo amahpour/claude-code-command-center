@@ -1,0 +1,13 @@
+[project]
+name = "claude-code-command-center"
+version = "0.1.0"
+description = "A web-based command center for monitoring and managing Claude Code sessions"
+requires-python = ">=3.12"
+
+[tool.pytest.ini_options]
+asyncio_mode = "auto"
+testpaths = ["tests"]
+pythonpath = ["."]
+
+[tool.pytest]
+asyncio_mode = "auto"
