@@ -76,6 +76,19 @@ body {
   z-index: 100;
 }
 
+.topbar-left {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  min-width: 0;
+}
+
+.topbar-logo {
+  width: 32px;
+  height: 32px;
+  flex-shrink: 0;
+}
+
 .topbar-title {
   font-size: 15px;
   font-weight: 600;
@@ -83,6 +96,9 @@ body {
   background: linear-gradient(135deg, #e4e4e7, #a1a1aa);
   -webkit-background-clip: text;
   -webkit-text-fill-color: transparent;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
 }
 
 .topbar-stats { display: flex; gap: 28px; }
@@ -1110,6 +1126,8 @@ body {
 /* ---- Responsive ---- */
 @media (max-width: 768px) {
   .topbar { flex-wrap: wrap; gap: 12px; }
+  .topbar-left { width: 100%; }
+  .topbar-logo { width: 28px; height: 28px; }
   .topbar-stats { order: 3; width: 100%; justify-content: center; }
   .session-grid { grid-template-columns: 1fr; }
   .main-content { padding: 16px; }
