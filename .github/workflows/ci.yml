@@ -4,6 +4,10 @@ on:
   pull_request:
     branches: [main]
 
+permissions:
+  contents: read
+  pull-requests: write
+
 jobs:
   unit-tests:
     name: Unit Tests (Python ${{ matrix.python-version }})
@@ -32,6 +36,14 @@ jobs:
             --cov=server \
             --cov-report=xml:reports/coverage.xml \
             --cov-report=term-missing
+
+      - name: Coverage PR comment
+        if: matrix.python-version == '3.12'
+        uses: MishaKav/pytest-coverage-comment@main
+        with:
+          pytest-xml-coverage-path: reports/coverage.xml
+          junitxml-path: reports/junit-unit.xml
+          title: Unit Test Coverage
 
       - name: Upload unit test reports
         if: always()
