@@ -292,9 +292,14 @@ const SessionViewer = {
 
   _fmtText(text) {
     let s = this._escapeHTML(text);
+    // Code blocks first (preserve newlines inside)
     s = s.replace(/```(\w*)\n?([\s\S]*?)```/g, '<pre><code>$2</code></pre>');
+    // Inline formatting
     s = s.replace(/`([^`]+)`/g, '<code>$1</code>');
     s = s.replace(/\*\*([^*]+)\*\*/g, '<strong>$1</strong>');
+    // Convert newlines to <br> outside of <pre> blocks
+    const parts = s.split(/(<pre>[\s\S]*?<\/pre>)/);
+    s = parts.map(p => p.startsWith('<pre>') ? p : p.replace(/\n/g, '<br>')).join('');
     return s;
   },
 
