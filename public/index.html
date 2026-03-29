@@ -72,32 +72,19 @@
 
     <!-- New Session Modal -->
     <div class="modal-overlay" id="new-session-modal" style="display:none">
-      <div class="modal modal-wide">
-        <h2>New Session</h2>
-        <div class="form-group">
-          <label for="project-dir">Project Directory</label>
-          <div class="input-with-btn">
-            <input type="text" id="project-dir" placeholder="/path/to/project" class="input">
-            <button class="btn btn-sm" id="browse-btn">Browse</button>
-          </div>
-        </div>
-        <div class="folder-picker" id="folder-picker" style="display:none">
-          <div class="folder-picker-header">
-            <button class="btn btn-sm" id="folder-up">&uarr; Up</button>
-            <span class="folder-picker-path" id="folder-picker-path">~</span>
-          </div>
-          <div class="folder-picker-list" id="folder-picker-list"></div>
-          <div class="folder-picker-actions">
-            <button class="btn btn-sm btn-primary" id="folder-select">Select this folder</button>
-          </div>
-        </div>
-        <div class="form-group">
-          <label for="session-prompt">Initial Prompt (optional)</label>
-          <textarea id="session-prompt" placeholder="What should Claude work on?" class="input textarea"></textarea>
-        </div>
+      <div class="modal">
+        <h2>Start a New Session</h2>
+        <p style="color: var(--text-secondary); line-height: 1.6; margin-bottom: 16px;">
+          Open a terminal and run <code>claude</code> in any project directory.
+          It will appear on this dashboard automatically via hooks.
+        </p>
+        <pre style="background: var(--surface-0); border: 1px solid var(--border); border-radius: var(--radius); padding: 12px; font-size: 13px; color: var(--text-secondary); margin-bottom: 16px;"><code>cd /path/to/your/project
+claude</code></pre>
+        <p style="color: var(--text-dim); font-size: 12px; margin-bottom: 16px;">
+          Make sure hooks are installed: <code>bash scripts/setup.sh</code>
+        </p>
         <div class="modal-actions">
-          <button class="btn" id="modal-cancel">Cancel</button>
-          <button class="btn btn-primary" id="modal-launch">Launch</button>
+          <button class="btn" id="modal-cancel">Close</button>
         </div>
       </div>
     </div>

@@ -75,62 +75,12 @@ const App = {
     const modal = document.getElementById('new-session-modal');
     const btn = document.getElementById('new-session-btn');
     const cancel = document.getElementById('modal-cancel');
-    const launch = document.getElementById('modal-launch');
 
     btn.addEventListener('click', () => { modal.style.display = 'flex'; });
-    cancel.addEventListener('click', () => {
-      modal.style.display = 'none';
-      document.getElementById('folder-picker').style.display = 'none';
-    });
+    cancel.addEventListener('click', () => { modal.style.display = 'none'; });
     modal.addEventListener('click', (e) => {
-      if (e.target === modal) {
-        modal.style.display = 'none';
-        document.getElementById('folder-picker').style.display = 'none';
-      }
+      if (e.target === modal) modal.style.display = 'none';
     });
-
-    launch.addEventListener('click', async () => {
-      const dir = document.getElementById('project-dir').value.trim();
-      const prompt = document.getElementById('session-prompt').value.trim();
-      if (!dir) return;
-
-      launch.disabled = true;
-      launch.textContent = 'Launching...';
-      try {
-        const resp = await fetch('/api/sessions/new', {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ project_dir: dir, prompt: prompt || null }),
-        });
-        if (resp.ok) {
-          const result = await resp.json();
-          modal.style.display = 'none';
-          document.getElementById('project-dir').value = '';
-          document.getElementById('session-prompt').value = '';
-          document.getElementById('folder-picker').style.display = 'none';
-          // Navigate to the new session
-          const title = result.project_name || result.session_id;
-          if (typeof SessionViewer !== 'undefined') {
-            SessionViewer.open(result.session_id, title);
-            window.history.pushState(
-              { view: 'session', sessionId: result.session_id, sessionTitle: title },
-              '', `#session/${result.session_id}`
-            );
-          }
-        } else {
-          const err = await resp.json();
-          alert('Failed: ' + (err.detail || 'Unknown error'));
-        }
-      } catch (e) {
-        console.error('Failed to launch session:', e);
-        alert('Failed to launch session');
-      }
-      launch.disabled = false;
-      launch.textContent = 'Launch';
-    });
-
-    // Folder picker
-    this.setupFolderPicker();
   },
 
   setupFolderPicker() {

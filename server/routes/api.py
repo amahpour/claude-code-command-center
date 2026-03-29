@@ -133,27 +133,11 @@ async def browse_directory(path: str = Query("~")):
 
 @router.post("/sessions/new")
 async def new_session(req: NewSessionRequest):
-    """Launch a new Claude Code session."""
-    import os
-    from server.terminal import launch_session
-    from server.hooks import _read_effort_level
-    try:
-        session_id = await launch_session(req.project_dir, req.prompt)
-        # Create a DB session immediately so it shows on dashboard
-        project_name = os.path.basename(req.project_dir)
-        await db.create_session(
-            session_id,
-            project_path=req.project_dir,
-        )
-        await db.update_session(session_id,
-            project_name=project_name,
-            status="working",
-            task_description=req.prompt or "Starting...",
-            effort_level=_read_effort_level(),
-        )
-        return {"status": "ok", "session_id": session_id, "project_name": project_name}
-    except Exception as e:
-        raise HTTPException(status_code=500, detail=str(e))
+    """Launch a new Claude Code session (disabled — see GitHub issue)."""
+    raise HTTPException(
+        status_code=501,
+        detail="New Session launching is temporarily disabled. Start Claude Code from your terminal instead — it will appear on the dashboard automatically via hooks."
+    )
 
 
 @router.post("/sessions/{session_id}/stop")
