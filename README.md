@@ -2,13 +2,17 @@
 
 A web-based command center for monitoring and managing multiple Claude Code sessions in real-time.
 
+![Dashboard](docs/dashboard.png)
+
+![Live Transcript](docs/transcript.png)
+
 ## Features
 
 - **Live Dashboard** — At-a-glance view of all active Claude Code sessions with status indicators, context usage, and cost tracking
 - **Live Transcripts** — Click any session to view its conversation in real-time with collapsible tool calls
 - **Session History** — Browse past sessions with full-text search across transcripts
 - **Analytics** — Track token usage, costs, and session patterns with interactive charts
-- **Jira Integration** — Auto-detects ticket IDs from git branch names (e.g., `feature/CIT-42-login` → `CIT-42`) with clickable links to Jira. Configure project keys and server URL in Settings.
+- **Jira Integration** — Auto-detects ticket IDs from git branch names (e.g., `feature/PROJ-42-login` → `PROJ-42`) with clickable links to Jira. Configure project keys and server URL in Settings.
 - **PR/MR Links** — GitHub pull request and GitLab merge request links on session cards
 - **Hook Integration** — Automatically captures session events via Claude Code hooks
 - **JSONL Watcher** — Monitors `~/.claude/projects/` for transcript changes in real-time
