@@ -72,11 +72,24 @@
 
     <!-- New Session Modal -->
     <div class="modal-overlay" id="new-session-modal" style="display:none">
-      <div class="modal">
+      <div class="modal modal-wide">
         <h2>New Session</h2>
         <div class="form-group">
           <label for="project-dir">Project Directory</label>
-          <input type="text" id="project-dir" placeholder="/path/to/project" class="input">
+          <div class="input-with-btn">
+            <input type="text" id="project-dir" placeholder="/path/to/project" class="input">
+            <button class="btn btn-sm" id="browse-btn">Browse</button>
+          </div>
+        </div>
+        <div class="folder-picker" id="folder-picker" style="display:none">
+          <div class="folder-picker-header">
+            <button class="btn btn-sm" id="folder-up">&uarr; Up</button>
+            <span class="folder-picker-path" id="folder-picker-path">~</span>
+          </div>
+          <div class="folder-picker-list" id="folder-picker-list"></div>
+          <div class="folder-picker-actions">
+            <button class="btn btn-sm btn-primary" id="folder-select">Select this folder</button>
+          </div>
         </div>
         <div class="form-group">
           <label for="session-prompt">Initial Prompt (optional)</label>

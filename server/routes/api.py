@@ -111,6 +111,26 @@ async def analytics_daily(days: int = Query(30, ge=1, le=365)):
     return {"days": daily}
 
 
+@router.get("/browse")
+async def browse_directory(path: str = Query("~")):
+    """List directories for the folder picker."""
+    import os
+    resolved = os.path.expanduser(path)
+    if not os.path.isdir(resolved):
+        raise HTTPException(status_code=400, detail="Not a directory")
+    try:
+        entries = []
+        for name in sorted(os.listdir(resolved)):
+            full = os.path.join(resolved, name)
+            if name.startswith("."):
+                continue  # Skip hidden files/dirs
+            if os.path.isdir(full):
+                entries.append({"name": name, "path": full, "type": "dir"})
+        return {"path": resolved, "entries": entries}
+    except PermissionError:
+        raise HTTPException(status_code=403, detail="Permission denied")
+
+
 @router.post("/sessions/new")
 async def new_session(req: NewSessionRequest):
     """Launch a new Claude Code session."""

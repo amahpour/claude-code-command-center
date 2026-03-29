@@ -51,9 +51,15 @@ const App = {
     const launch = document.getElementById('modal-launch');
 
     btn.addEventListener('click', () => { modal.style.display = 'flex'; });
-    cancel.addEventListener('click', () => { modal.style.display = 'none'; });
+    cancel.addEventListener('click', () => {
+      modal.style.display = 'none';
+      document.getElementById('folder-picker').style.display = 'none';
+    });
     modal.addEventListener('click', (e) => {
-      if (e.target === modal) modal.style.display = 'none';
+      if (e.target === modal) {
+        modal.style.display = 'none';
+        document.getElementById('folder-picker').style.display = 'none';
+      }
     });
 
     launch.addEventListener('click', async () => {
@@ -61,6 +67,8 @@ const App = {
       const prompt = document.getElementById('session-prompt').value.trim();
       if (!dir) return;
 
+      launch.disabled = true;
+      launch.textContent = 'Launching...';
       try {
         const resp = await fetch('/api/sessions/new', {
           method: 'POST',
@@ -71,10 +79,77 @@ const App = {
           modal.style.display = 'none';
           document.getElementById('project-dir').value = '';
           document.getElementById('session-prompt').value = '';
+          document.getElementById('folder-picker').style.display = 'none';
+        } else {
+          const err = await resp.json();
+          alert('Failed: ' + (err.detail || 'Unknown error'));
         }
       } catch (e) {
         console.error('Failed to launch session:', e);
+        alert('Failed to launch session');
       }
+      launch.disabled = false;
+      launch.textContent = 'Launch';
+    });
+
+    // Folder picker
+    this.setupFolderPicker();
+  },
+
+  setupFolderPicker() {
+    const browseBtn = document.getElementById('browse-btn');
+    const picker = document.getElementById('folder-picker');
+    const pickerList = document.getElementById('folder-picker-list');
+    const pickerPath = document.getElementById('folder-picker-path');
+    const upBtn = document.getElementById('folder-up');
+    const selectBtn = document.getElementById('folder-select');
+    let currentPath = '~';
+
+    const loadDir = async (path) => {
+      try {
+        const resp = await fetch(`/api/browse?path=${encodeURIComponent(path)}`);
+        if (!resp.ok) return;
+        const data = await resp.json();
+        currentPath = data.path;
+        pickerPath.textContent = currentPath;
+        document.getElementById('project-dir').value = currentPath;
+
+        if (data.entries.length === 0) {
+          pickerList.innerHTML = '<div class="folder-empty">No subdirectories</div>';
+          return;
+        }
+
+        pickerList.innerHTML = data.entries.map(e =>
+          `<div class="folder-entry" data-path="${e.path.replace(/"/g, '&quot;')}">
+            <span class="folder-entry-icon">&#128193;</span>
+            <span class="folder-entry-name">${e.name}</span>
+          </div>`
+        ).join('');
+
+        pickerList.querySelectorAll('.folder-entry').forEach(el => {
+          el.addEventListener('click', () => loadDir(el.dataset.path));
+        });
+      } catch (e) {
+        console.error('Browse failed:', e);
+      }
+    };
+
+    browseBtn.addEventListener('click', () => {
+      picker.style.display = picker.style.display === 'none' ? 'block' : 'none';
+      if (picker.style.display === 'block') {
+        const current = document.getElementById('project-dir').value.trim();
+        loadDir(current || '~');
+      }
+    });
+
+    upBtn.addEventListener('click', () => {
+      const parent = currentPath.replace(/\/[^/]+\/?$/, '') || '/';
+      loadDir(parent);
+    });
+
+    selectBtn.addEventListener('click', () => {
+      document.getElementById('project-dir').value = currentPath;
+      picker.style.display = 'none';
     });
   },
 

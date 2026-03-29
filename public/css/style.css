@@ -450,6 +450,74 @@ body {
 
 .textarea { min-height: 80px; resize: vertical; }
 
+.modal-wide { max-width: 560px; }
+
+.input-with-btn { display: flex; gap: 8px; }
+.input-with-btn .input { flex: 1; }
+
+.folder-picker {
+  margin: -8px 0 16px;
+  border: 1px solid var(--border-light);
+  border-radius: var(--radius);
+  overflow: hidden;
+}
+
+.folder-picker-header {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 8px 10px;
+  background: var(--surface-2);
+  border-bottom: 1px solid var(--border);
+}
+
+.folder-picker-path {
+  font-family: var(--font-mono);
+  font-size: 12px;
+  color: var(--text-secondary);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  flex: 1;
+}
+
+.folder-picker-list {
+  max-height: 240px;
+  overflow-y: auto;
+}
+
+.folder-entry {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 6px 12px;
+  font-size: 13px;
+  cursor: pointer;
+  transition: background var(--transition);
+  border-bottom: 1px solid var(--border);
+}
+
+.folder-entry:last-child { border-bottom: none; }
+.folder-entry:hover { background: var(--surface-3); }
+
+.folder-entry-icon { font-size: 14px; flex-shrink: 0; }
+.folder-entry-name { flex: 1; }
+
+.folder-picker-actions {
+  padding: 8px 10px;
+  background: var(--surface-2);
+  border-top: 1px solid var(--border);
+  display: flex;
+  justify-content: flex-end;
+}
+
+.folder-empty {
+  padding: 20px;
+  text-align: center;
+  color: var(--text-faint);
+  font-size: 13px;
+}
+
 .modal-actions { display: flex; justify-content: flex-end; gap: 8px; margin-top: 20px; }
 
 /* ---- Terminal / Session Viewer Overlay ---- */
