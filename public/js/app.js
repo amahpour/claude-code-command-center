@@ -103,10 +103,20 @@ const App = {
           body: JSON.stringify({ project_dir: dir, prompt: prompt || null }),
         });
         if (resp.ok) {
+          const result = await resp.json();
           modal.style.display = 'none';
           document.getElementById('project-dir').value = '';
           document.getElementById('session-prompt').value = '';
           document.getElementById('folder-picker').style.display = 'none';
+          // Navigate to the new session
+          const title = result.project_name || result.session_id;
+          if (typeof SessionViewer !== 'undefined') {
+            SessionViewer.open(result.session_id, title);
+            window.history.pushState(
+              { view: 'session', sessionId: result.session_id, sessionTitle: title },
+              '', `#session/${result.session_id}`
+            );
+          }
         } else {
           const err = await resp.json();
           alert('Failed: ' + (err.detail || 'Unknown error'));
