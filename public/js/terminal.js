@@ -298,6 +298,28 @@ const SessionViewer = {
     const parts = s.split(/(<pre>[\s\S]*?<\/pre>)/);
     s = parts.map(p => {
       if (p.startsWith('<pre>')) return p;
+      // Tables — convert pipe-delimited rows
+      p = p.replace(/((?:^\|.+\|\s*$\n?)+)/gm, (match) => {
+        const rows = match.trim().split('\n').filter(r => r.trim());
+        if (rows.length < 2) return match;
+        // Check if second row is a separator (|---|---|)
+        const isSep = (r) => /^\|[\s\-:]+\|/.test(r);
+        const parseRow = (r) => r.split('|').slice(1, -1).map(c => c.trim());
+        let html = '<table class="md-table">';
+        let startData = 0;
+        if (isSep(rows[1])) {
+          // First row is header
+          html += '<thead><tr>' + parseRow(rows[0]).map(c => `<th>${c}</th>`).join('') + '</tr></thead>';
+          startData = 2;
+        }
+        html += '<tbody>';
+        for (let i = startData; i < rows.length; i++) {
+          if (isSep(rows[i])) continue;
+          html += '<tr>' + parseRow(rows[i]).map(c => `<td>${c}</td>`).join('') + '</tr>';
+        }
+        html += '</tbody></table>';
+        return html;
+      });
       // Headings
       p = p.replace(/^### (.+)$/gm, '<h4>$1</h4>');
       p = p.replace(/^## (.+)$/gm, '<h3>$1</h3>');

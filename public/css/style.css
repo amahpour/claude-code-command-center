@@ -647,6 +647,30 @@ body {
 .chat-content hr { border: none; border-top: 1px solid var(--border-light); margin: 10px 0; }
 .chat-content ul { margin: 4px 0; padding-left: 20px; }
 .chat-content li { margin-bottom: 2px; }
+.chat-content .md-table {
+  width: 100%;
+  border-collapse: collapse;
+  margin: 8px 0;
+  font-size: 13px;
+}
+.chat-content .md-table th,
+.chat-content .md-table td {
+  padding: 6px 10px;
+  border: 1px solid var(--border-light);
+  text-align: left;
+}
+.chat-content .md-table th {
+  background: var(--surface-3);
+  font-weight: 600;
+  color: var(--text);
+  font-size: 12px;
+}
+.chat-content .md-table td {
+  background: var(--surface-1);
+}
+.chat-content .md-table tr:hover td {
+  background: var(--surface-2);
+}
 
 .chat-content pre {
   margin: 6px 0;
