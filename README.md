@@ -21,7 +21,7 @@ A web-based command center for monitoring and managing multiple Claude Code sess
 
 ```bash
 # Clone the repo
-git clone https://github.com/yourusername/claude-code-command-center.git
+git clone https://github.com/amahpour/claude-code-command-center.git
 cd claude-code-command-center
 
 # Create virtual environment and install dependencies

@@ -13,3 +13,17 @@ htmlcov/
 target/
 .DS_Store
 node_modules/
+
+# Sensitive files (defensive)
+*.env
+*.env.*
+*.pem
+*.key
+*.p12
+
+# Local Claude Code settings
+.claude/settings.local.json
+
+# Build specs (internal dev artifacts)
+claude-code-command-center-build-prompt.md
+claude-code-command-center-spec.md
