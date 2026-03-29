@@ -125,43 +125,35 @@ def _parse_jsonl_entry(line: str) -> dict | None:
 
 
 def _format_tool_result(result) -> str:
-    """Format a tool result for clean display."""
+    """Format a tool result for clean display. No truncation — the UI handles overflow."""
     if isinstance(result, str):
-        if len(result) > 1000:
-            return result[:1000] + "\n... (truncated)"
         return result
 
     if isinstance(result, dict):
-        # Bash tool results: show stdout/stderr
         stdout = result.get("stdout", "")
         stderr = result.get("stderr", "")
         if stdout or stderr:
-            text = stdout or stderr
-            if len(text) > 1000:
-                text = text[:1000] + "\n... (truncated)"
-            return text
+            return stdout or stderr
 
         # File operation results (Write, Edit, Read)
         file_path = result.get("filePath") or result.get("file_path", "")
         op_type = result.get("type", "")
+        content = result.get("content", "")
         if file_path:
-            if op_type:
-                return f"{op_type}: {file_path}"
-            return file_path
+            label = f"{op_type}: {file_path}" if op_type else file_path
+            if content:
+                return f"{label}\n{content}"
+            return label
 
-        # Generic dict: format concisely
-        text = json.dumps(result, indent=2, ensure_ascii=False)
-        if len(text) > 1000:
-            text = text[:1000] + "\n... (truncated)"
-        return text
+        return json.dumps(result, indent=2, ensure_ascii=False)
 
-    return str(result)[:1000]
+    return str(result)
 
 
 def _format_tool_summary(name: str, inp: dict) -> str:
-    """Format a tool call's input into a readable summary."""
+    """Format a tool call's input into a readable summary. No truncation."""
     if not isinstance(inp, dict):
-        return str(inp)[:300]
+        return str(inp)
 
     name_lower = name.lower()
 
@@ -171,13 +163,12 @@ def _format_tool_summary(name: str, inp: dict) -> str:
     if name_lower in ("write",):
         fp = inp.get("file_path", "")
         content = inp.get("content", "")
-        preview = content[:200] + "..." if len(content) > 200 else content
-        return f"{fp}\n{preview}"
+        return f"{fp}\n{content}" if content else fp
 
     if name_lower in ("edit",):
         fp = inp.get("file_path", "")
-        old = inp.get("old_string", "")[:100]
-        new = inp.get("new_string", "")[:100]
+        old = inp.get("old_string", "")
+        new = inp.get("new_string", "")
         return f"{fp}\n--- {old}\n+++ {new}"
 
     if name_lower in ("bash",):
@@ -192,19 +183,16 @@ def _format_tool_summary(name: str, inp: dict) -> str:
         return f"pattern: {inp.get('pattern', '')}  path: {inp.get('path', '.')}"
 
     if name_lower in ("agent",):
-        return inp.get("prompt", inp.get("description", ""))[:300]
+        return inp.get("prompt", inp.get("description", ""))
 
     if name_lower in ("taskupdate", "taskcreate"):
-        return inp.get("subject", inp.get("description", ""))[:200]
+        return inp.get("subject", inp.get("description", ""))
 
-    # Generic: show key fields concisely
+    # Generic: show all fields
     summary_parts = []
     for k, v in inp.items():
-        vs = str(v)
-        if len(vs) > 100:
-            vs = vs[:100] + "..."
-        summary_parts.append(f"{k}: {vs}")
-    return "\n".join(summary_parts[:5])
+        summary_parts.append(f"{k}: {v}")
+    return "\n".join(summary_parts)
 
 
 def _extract_content(content) -> str | None:
@@ -228,12 +216,7 @@ def _extract_content(content) -> str | None:
                     parts.append(f"[Tool: {name}]\n{summary}")
                 elif item.get("type") == "tool_result":
                     result_content = item.get("content", "")
-                    if isinstance(result_content, str):
-                        text = result_content
-                    else:
-                        text = str(result_content)
-                    if len(text) > 500:
-                        text = text[:500] + "..."
+                    text = result_content if isinstance(result_content, str) else str(result_content)
                     parts.append(f"[Result] {text}")
         return "\n".join(parts) if parts else None
 
