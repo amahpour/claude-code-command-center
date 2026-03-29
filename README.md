@@ -19,16 +19,23 @@ A web-based command center for monitoring and managing multiple Claude Code sess
 
 ## Quick Start
 
+### Install from GitHub
+
 ```bash
-# Clone the repo
+pip install git+https://github.com/amahpour/claude-code-command-center.git
+```
+
+### Or clone and install locally
+
+```bash
 git clone https://github.com/amahpour/claude-code-command-center.git
 cd claude-code-command-center
+pip install .
+```
 
-# Create virtual environment and install dependencies
-python -m venv .venv
-source .venv/bin/activate
-pip install -r requirements.txt
+### Run
 
+```bash
 # Install Claude Code hooks
 bash scripts/setup.sh
 
