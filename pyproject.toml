@@ -8,6 +8,3 @@ requires-python = ">=3.12"
 asyncio_mode = "auto"
 testpaths = ["tests"]
 pythonpath = ["."]
-
-[tool.pytest]
-asyncio_mode = "auto"
