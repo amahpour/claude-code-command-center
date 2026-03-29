@@ -1,8 +1,9 @@
 """Tests for hook event processing."""
 
 import asyncio
+import subprocess
 from datetime import datetime, timezone, timedelta
-from unittest.mock import patch
+from unittest.mock import patch, MagicMock, AsyncMock
 
 import pytest
 import server.db as db
@@ -219,3 +220,357 @@ async def test_git_branch_extraction():
             "cwd": "/tmp/test",
         })
         assert result["git_branch"] == "feature/test"
+
+
+async def test_notify_update_with_callback():
+    """Test that _notify_update calls the callback."""
+    from server.hooks import set_update_callback, _notify_update
+    callback = AsyncMock()
+    set_update_callback(callback)
+    try:
+        await _notify_update({"id": "test"})
+        callback.assert_called_once_with({"id": "test"})
+    finally:
+        set_update_callback(None)
+
+
+async def test_notify_update_without_callback():
+    """Test that _notify_update is no-op without callback."""
+    from server.hooks import set_update_callback, _notify_update
+    set_update_callback(None)
+    await _notify_update({"id": "test"})  # Should not raise
+
+
+def test_read_effort_level_success():
+    """Test reading effort level from settings file."""
+    from server.hooks import _read_effort_level
+    with patch("builtins.open", MagicMock(return_value=MagicMock(
+        __enter__=lambda s: s, __exit__=MagicMock(return_value=False),
+        read=MagicMock(return_value='{"effortLevel": "high"}')
+    ))):
+        with patch("json.load", return_value={"effortLevel": "high"}):
+            assert _read_effort_level() == "high"
+
+
+def test_read_effort_level_file_not_found():
+    """Test reading effort level when settings file doesn't exist."""
+    from server.hooks import _read_effort_level
+    with patch("builtins.open", side_effect=FileNotFoundError):
+        assert _read_effort_level() is None
+
+
+def test_extract_git_branch_success():
+    """Test git branch extraction from working directory."""
+    from server.hooks import _extract_git_branch
+    mock_result = MagicMock(returncode=0, stdout="feature/my-branch\n")
+    with patch("subprocess.run", return_value=mock_result):
+        assert _extract_git_branch("/tmp/test") == "feature/my-branch"
+
+
+def test_extract_git_branch_failure():
+    """Test git branch extraction when git fails."""
+    from server.hooks import _extract_git_branch
+    mock_result = MagicMock(returncode=1, stdout="")
+    with patch("subprocess.run", return_value=mock_result):
+        assert _extract_git_branch("/tmp/test") is None
+
+
+def test_extract_git_branch_no_dir():
+    """Test git branch extraction with no directory."""
+    from server.hooks import _extract_git_branch
+    assert _extract_git_branch(None) is None
+
+
+def test_extract_git_branch_timeout():
+    """Test git branch extraction when subprocess times out."""
+    from server.hooks import _extract_git_branch
+    with patch("subprocess.run", side_effect=subprocess.TimeoutExpired("git", 5)):
+        assert _extract_git_branch("/tmp/test") is None
+
+
+async def test_session_start_with_effort_level():
+    """Test that effort level is read on new session creation."""
+    with patch("server.hooks._extract_git_branch", return_value=None):
+        with patch("server.hooks._read_effort_level", return_value="low"):
+            result = await process_hook_event({
+                "event_type": "SessionStart",
+                "session_id": "effort-1",
+                "cwd": "/tmp/test",
+            })
+            assert result["effort_level"] == "low"
+
+
+async def test_cache_tokens_in_stop():
+    """Test that cache_tokens are recorded in Stop events."""
+    await process_hook_event({
+        "event_type": "SessionStart",
+        "session_id": "cache-1",
+        "cwd": "/tmp/test",
+    })
+    result = await process_hook_event({
+        "event_type": "Stop",
+        "session_id": "cache-1",
+        "cache_tokens": 5000,
+    })
+    assert result["cache_tokens"] == 5000
+
+
+async def test_process_hook_broadcasts_update():
+    """Test that process_hook_event calls _notify_update."""
+    from server.hooks import set_update_callback
+    callback = AsyncMock()
+    set_update_callback(callback)
+    try:
+        with patch("server.hooks._extract_git_branch", return_value=None):
+            await process_hook_event({
+                "event_type": "SessionStart",
+                "session_id": "broadcast-1",
+                "cwd": "/tmp/test",
+            })
+            assert callback.call_count >= 1
+    finally:
+        set_update_callback(None)
+
+
+async def test_project_path_update_on_existing_session():
+    """Test that project info is set from cwd when session lacks it."""
+    with patch("server.hooks._extract_git_branch", return_value=None):
+        await db.create_session("proj-update-1")
+        result = await process_hook_event({
+            "event_type": "PreToolUse",
+            "session_id": "proj-update-1",
+            "cwd": "/home/user/myproject",
+        })
+        assert result["project_name"] == "myproject"
+        assert result["project_path"] == "/home/user/myproject"
+
+
+def test_start_and_stop_stale_checker():
+    """Test starting and stopping the stale checker."""
+    from server.hooks import start_stale_checker, stop_stale_checker
+    import server.hooks as hooks_mod
+
+    with patch("asyncio.create_task") as mock_create:
+        mock_task = MagicMock()
+        mock_task.done.return_value = False
+        mock_create.return_value = mock_task
+        start_stale_checker()
+        mock_create.assert_called_once()
+
+        hooks_mod._stale_checker_task = mock_task
+        stop_stale_checker()
+        mock_task.cancel.assert_called_once()
+        assert hooks_mod._stale_checker_task is None
+
+
+async def test_event_field_alias():
+    """Test that 'event' field works as alias for 'event_type'."""
+    with patch("server.hooks._extract_git_branch", return_value=None):
+        result = await process_hook_event({
+            "event": "SessionStart",
+            "session_id": "alias-1",
+            "cwd": "/tmp/test",
+        })
+        assert result is not None
+        assert result["status"] == "idle"
+
+
+async def test_check_stale_sessions_marks_stale():
+    """Test _check_stale_sessions marks old sessions as stale."""
+    from server.hooks import _check_stale_sessions
+    import server.hooks as hooks_mod
+
+    # Create a session with old activity
+    old_time = (datetime.now(timezone.utc) - timedelta(minutes=10)).isoformat()
+    await db.create_session("stale-check-1")
+    await db.update_session("stale-check-1", status="idle", last_activity_at=old_time)
+
+    # Create a recent session
+    recent_time = datetime.now(timezone.utc).isoformat()
+    await db.create_session("stale-check-2")
+    await db.update_session("stale-check-2", status="working", last_activity_at=recent_time)
+
+    # Patch sleep to only run once then cancel
+    call_count = 0
+
+    async def mock_sleep(seconds):
+        nonlocal call_count
+        call_count += 1
+        if call_count > 1:
+            raise asyncio.CancelledError()
+
+    with patch("asyncio.sleep", side_effect=mock_sleep):
+        with patch.object(hooks_mod, "_on_session_update", new=None):
+            try:
+                await _check_stale_sessions()
+            except asyncio.CancelledError:
+                pass
+
+    s1 = await db.get_session("stale-check-1")
+    assert s1["status"] == "stale"
+
+    s2 = await db.get_session("stale-check-2")
+    assert s2["status"] == "working"
+
+
+async def test_check_stale_sessions_skips_completed():
+    """_check_stale_sessions should skip completed/stale sessions."""
+    from server.hooks import _check_stale_sessions
+
+    old_time = (datetime.now(timezone.utc) - timedelta(minutes=10)).isoformat()
+    await db.create_session("stale-skip-1")
+    await db.update_session("stale-skip-1", status="completed", last_activity_at=old_time)
+
+    call_count = 0
+    async def mock_sleep(seconds):
+        nonlocal call_count
+        call_count += 1
+        if call_count > 1:
+            raise asyncio.CancelledError()
+
+    with patch("asyncio.sleep", side_effect=mock_sleep):
+        try:
+            await _check_stale_sessions()
+        except asyncio.CancelledError:
+            pass
+
+    s = await db.get_session("stale-skip-1")
+    assert s["status"] == "completed"
+
+
+async def test_check_stale_sessions_no_last_activity():
+    """_check_stale_sessions skips sessions without last_activity_at."""
+    from server.hooks import _check_stale_sessions
+
+    await db.create_session("stale-noact-1")
+    await db.update_session("stale-noact-1", status="idle")
+
+    call_count = 0
+    async def mock_sleep(seconds):
+        nonlocal call_count
+        call_count += 1
+        if call_count > 1:
+            raise asyncio.CancelledError()
+
+    with patch("asyncio.sleep", side_effect=mock_sleep):
+        try:
+            await _check_stale_sessions()
+        except asyncio.CancelledError:
+            pass
+
+    s = await db.get_session("stale-noact-1")
+    assert s["status"] == "idle"
+
+
+async def test_check_stale_sessions_handles_exception():
+    """_check_stale_sessions handles general exceptions gracefully."""
+    from server.hooks import _check_stale_sessions
+
+    call_count = 0
+    async def mock_sleep(seconds):
+        nonlocal call_count
+        call_count += 1
+        if call_count == 1:
+            return  # Allow first iteration
+        raise asyncio.CancelledError()
+
+    with patch("asyncio.sleep", side_effect=mock_sleep):
+        with patch("server.db.get_all_active_sessions", side_effect=Exception("db error")):
+            try:
+                await _check_stale_sessions()
+            except asyncio.CancelledError:
+                pass  # Expected
+
+
+async def test_project_path_with_git_branch_on_existing():
+    """Test git branch is extracted when project path is set on existing session."""
+    with patch("server.hooks._extract_git_branch", return_value="main"):
+        await db.create_session("branch-update-1")
+        result = await process_hook_event({
+            "event_type": "PreToolUse",
+            "session_id": "branch-update-1",
+            "cwd": "/home/user/myproject",
+        })
+        assert result["git_branch"] == "main"
+
+
+async def test_check_stale_sessions_timezone_naive():
+    """Test stale checker handles timezone-naive timestamps."""
+    from server.hooks import _check_stale_sessions
+
+    # Simulate a timezone-naive ISO timestamp without Z
+    old_naive = (datetime.now(timezone.utc) - timedelta(minutes=10)).strftime("%Y-%m-%dT%H:%M:%S")
+    await db.create_session("stale-naive-1")
+    await db.update_session("stale-naive-1", status="idle", last_activity_at=old_naive)
+
+    call_count = 0
+    async def mock_sleep(seconds):
+        nonlocal call_count
+        call_count += 1
+        if call_count > 1:
+            raise asyncio.CancelledError()
+
+    with patch("asyncio.sleep", side_effect=mock_sleep):
+        try:
+            await _check_stale_sessions()
+        except asyncio.CancelledError:
+            pass
+
+    s = await db.get_session("stale-naive-1")
+    assert s["status"] == "stale"
+
+
+async def test_check_stale_sessions_invalid_timestamp():
+    """Test stale checker handles invalid timestamps gracefully."""
+    from server.hooks import _check_stale_sessions
+
+    await db.create_session("stale-bad-ts")
+    await db.update_session("stale-bad-ts", status="idle", last_activity_at="not-a-date")
+
+    call_count = 0
+    async def mock_sleep(seconds):
+        nonlocal call_count
+        call_count += 1
+        if call_count > 1:
+            raise asyncio.CancelledError()
+
+    with patch("asyncio.sleep", side_effect=mock_sleep):
+        try:
+            await _check_stale_sessions()
+        except asyncio.CancelledError:
+            pass
+
+    # Should not crash, session stays idle
+    s = await db.get_session("stale-bad-ts")
+    assert s["status"] == "idle"
+
+
+async def test_check_stale_notifies_on_update():
+    """Test that stale checker notifies on session update."""
+    from server.hooks import _check_stale_sessions, set_update_callback
+    import server.hooks as hooks_mod
+
+    old_time = (datetime.now(timezone.utc) - timedelta(minutes=10)).isoformat()
+    await db.create_session("stale-notify-1")
+    await db.update_session("stale-notify-1", status="idle", last_activity_at=old_time)
+
+    callback = AsyncMock()
+    set_update_callback(callback)
+
+    call_count = 0
+    async def mock_sleep(seconds):
+        nonlocal call_count
+        call_count += 1
+        if call_count > 1:
+            raise asyncio.CancelledError()
+
+    try:
+        with patch("asyncio.sleep", side_effect=mock_sleep):
+            try:
+                await _check_stale_sessions()
+            except asyncio.CancelledError:
+                pass
+
+        assert callback.call_count >= 1
+    finally:
+        set_update_callback(None)

@@ -150,3 +150,127 @@ async def test_analytics_daily(client: AsyncClient):
     assert resp.status_code == 200
     data = resp.json()
     assert "days" in data
+
+
+async def test_get_settings_empty(client: AsyncClient):
+    resp = await client.get("/api/settings")
+    assert resp.status_code == 200
+    assert resp.json()["settings"] == {}
+
+
+async def test_update_settings(client: AsyncClient):
+    resp = await client.put("/api/settings", json={
+        "jira_project_keys": ["PROJ", "DEV"],
+        "jira_server_url": "https://jira.example.com",
+    })
+    assert resp.status_code == 200
+    settings = resp.json()["settings"]
+    assert settings["jira_project_keys"] == ["PROJ", "DEV"]
+    assert settings["jira_server_url"] == "https://jira.example.com"
+
+
+async def test_get_settings_with_values(client: AsyncClient):
+    await db.set_setting("jira_project_keys", '["PROJ"]')
+    await db.set_setting("plain_key", "not-json")
+    resp = await client.get("/api/settings")
+    assert resp.status_code == 200
+    settings = resp.json()["settings"]
+    assert settings["jira_project_keys"] == ["PROJ"]
+    assert settings["plain_key"] == "not-json"
+
+
+async def test_patch_session_ticket_id(client: AsyncClient):
+    await db.create_session("patch-1", project_path="/tmp/proj")
+    resp = await client.patch("/api/sessions/patch-1", json={"ticket_id": "PROJ-123"})
+    assert resp.status_code == 200
+    assert resp.json()["session"]["ticket_id"] == "PROJ-123"
+
+
+async def test_patch_session_display_name(client: AsyncClient):
+    await db.create_session("patch-2", project_path="/tmp/proj")
+    resp = await client.patch("/api/sessions/patch-2", json={"display_name": "My Session"})
+    assert resp.status_code == 200
+    assert resp.json()["session"]["display_name"] == "My Session"
+
+
+async def test_patch_session_not_found(client: AsyncClient):
+    resp = await client.patch("/api/sessions/nonexistent", json={"ticket_id": "X-1"})
+    assert resp.status_code == 404
+
+
+async def test_patch_session_no_updates(client: AsyncClient):
+    await db.create_session("patch-3")
+    resp = await client.patch("/api/sessions/patch-3", json={})
+    assert resp.status_code == 200
+    assert resp.json()["session"]["id"] == "patch-3"
+
+
+async def test_browse_directory(client: AsyncClient):
+    import tempfile, os
+    with tempfile.TemporaryDirectory() as d:
+        os.makedirs(os.path.join(d, "subdir"))
+        with open(os.path.join(d, "file.txt"), "w") as f:
+            f.write("test")
+
+        resp = await client.get(f"/api/browse?path={d}")
+        assert resp.status_code == 200
+        entries = resp.json()["entries"]
+        names = [e["name"] for e in entries]
+        assert "subdir" in names
+        # Regular files should not appear (only dirs)
+        assert "file.txt" not in names
+
+
+async def test_browse_hidden_files_excluded(client: AsyncClient):
+    import tempfile, os
+    with tempfile.TemporaryDirectory() as d:
+        os.makedirs(os.path.join(d, ".hidden"))
+        os.makedirs(os.path.join(d, "visible"))
+
+        resp = await client.get(f"/api/browse?path={d}")
+        names = [e["name"] for e in resp.json()["entries"]]
+        assert ".hidden" not in names
+        assert "visible" in names
+
+
+async def test_browse_invalid_path(client: AsyncClient):
+    resp = await client.get("/api/browse?path=/nonexistent/path/xyz")
+    assert resp.status_code == 400
+
+
+async def test_browse_permission_denied(client: AsyncClient):
+    from unittest.mock import patch
+    with patch("os.listdir", side_effect=PermissionError):
+        with patch("os.path.isdir", return_value=True):
+            resp = await client.get("/api/browse?path=/root")
+            assert resp.status_code == 403
+
+
+async def test_new_session_disabled(client: AsyncClient):
+    resp = await client.post("/api/sessions/new", json={
+        "project_dir": "/tmp/proj",
+        "prompt": "hello",
+    })
+    assert resp.status_code == 501
+
+
+async def test_stop_session_api(client: AsyncClient):
+    await db.create_session("stop-1")
+    from unittest.mock import patch, AsyncMock
+    with patch("server.terminal.stop_session", new_callable=AsyncMock):
+        resp = await client.post("/api/sessions/stop-1/stop")
+        assert resp.status_code == 200
+        assert resp.json()["status"] == "ok"
+
+
+async def test_stop_session_not_found(client: AsyncClient):
+    resp = await client.post("/api/sessions/nonexistent/stop")
+    assert resp.status_code == 404
+
+
+async def test_stop_session_error(client: AsyncClient):
+    await db.create_session("stop-err")
+    from unittest.mock import patch, AsyncMock
+    with patch("server.terminal.stop_session", new_callable=AsyncMock, side_effect=Exception("tmux error")):
+        resp = await client.post("/api/sessions/stop-err/stop")
+        assert resp.status_code == 500

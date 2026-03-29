@@ -1,6 +1,7 @@
 """Tests for the database layer."""
 
 import pytest
+from unittest.mock import patch
 import server.db as db
 
 
@@ -142,3 +143,71 @@ async def test_completed_sessions():
     completed = await db.get_completed_sessions()
     assert len(completed) == 1
     assert completed[0]["id"] == "c1"
+
+
+async def test_update_session_no_kwargs():
+    """update_session with no kwargs returns session unchanged."""
+    await db.create_session("noop-1")
+    result = await db.update_session("noop-1")
+    assert result is not None
+    assert result["id"] == "noop-1"
+
+
+async def test_get_setting_and_set_setting():
+    """Test setting CRUD operations."""
+    val = await db.get_setting("test_key")
+    assert val is None
+
+    await db.set_setting("test_key", "test_value")
+    val = await db.get_setting("test_key")
+    assert val == "test_value"
+
+    await db.set_setting("test_key", "new_value")
+    val = await db.get_setting("test_key")
+    assert val == "new_value"
+
+
+async def test_get_all_settings():
+    """Test getting all settings."""
+    await db.set_setting("k1", "v1")
+    await db.set_setting("k2", "v2")
+    settings = await db.get_all_settings()
+    assert settings["k1"] == "v1"
+    assert settings["k2"] == "v2"
+
+
+async def test_get_db_without_init():
+    """get_db raises RuntimeError when not initialized."""
+    await db.close_db()
+    with pytest.raises(RuntimeError, match="Database not initialized"):
+        await db.get_db()
+    # Re-init for cleanup
+    await db.init_db(":memory:")
+
+
+def test_get_db_path_default():
+    """Test _get_db_path returns default path."""
+    import os
+    with patch.dict(os.environ, {}, clear=True):
+        path = db._get_db_path()
+        assert "data.db" in path
+
+
+def test_get_db_path_from_env():
+    """Test _get_db_path respects env override."""
+    import os
+    with patch.dict(os.environ, {"CCCC_DB_PATH": "/tmp/test.db"}):
+        assert db._get_db_path() == "/tmp/test.db"
+
+
+async def test_init_db_with_file_path():
+    """Test init_db creates directory for file-based DB."""
+    import tempfile, os
+    await db.close_db()
+    with tempfile.TemporaryDirectory() as d:
+        path = os.path.join(d, "subdir", "test.db")
+        await db.init_db(path)
+        assert os.path.isfile(path)
+        await db.close_db()
+    # Re-init for cleanup
+    await db.init_db(":memory:")
