@@ -341,6 +341,30 @@ def test_format_tool_summary_taskupdate():
     assert result == "task subject"
 
 
+def test_format_tool_summary_enter_plan_mode():
+    from server.watcher import _format_tool_summary
+    result = _format_tool_summary("EnterPlanMode", {"description": "Planning implementation"})
+    assert result == "Planning implementation"
+
+
+def test_format_tool_summary_enter_plan_mode_default():
+    from server.watcher import _format_tool_summary
+    result = _format_tool_summary("EnterPlanMode", {})
+    assert result == "Entering plan mode"
+
+
+def test_format_tool_summary_exit_plan_mode():
+    from server.watcher import _format_tool_summary
+    result = _format_tool_summary("ExitPlanMode", {"description": "Plan complete"})
+    assert result == "Plan complete"
+
+
+def test_format_tool_summary_exit_plan_mode_default():
+    from server.watcher import _format_tool_summary
+    result = _format_tool_summary("ExitPlanMode", {})
+    assert result == "Exiting plan mode"
+
+
 def test_format_tool_summary_generic():
     from server.watcher import _format_tool_summary
     result = _format_tool_summary("CustomTool", {"arg1": "val1", "arg2": "val2"})
