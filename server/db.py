@@ -176,6 +176,7 @@ async def get_all_active_sessions() -> list[dict]:
     cursor = await db.execute("""
         SELECT * FROM sessions
         WHERE status != 'completed'
+          AND id NOT LIKE 'agent-%'
         ORDER BY
             CASE status
                 WHEN 'waiting' THEN 1

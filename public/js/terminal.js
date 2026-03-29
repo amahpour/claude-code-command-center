@@ -294,12 +294,34 @@ const SessionViewer = {
     let s = this._escapeHTML(text);
     // Code blocks first (preserve newlines inside)
     s = s.replace(/```(\w*)\n?([\s\S]*?)```/g, '<pre><code>$2</code></pre>');
-    // Inline formatting
-    s = s.replace(/`([^`]+)`/g, '<code>$1</code>');
-    s = s.replace(/\*\*([^*]+)\*\*/g, '<strong>$1</strong>');
-    // Convert newlines to <br> outside of <pre> blocks
+    // Split on pre blocks to only process non-code sections
     const parts = s.split(/(<pre>[\s\S]*?<\/pre>)/);
-    s = parts.map(p => p.startsWith('<pre>') ? p : p.replace(/\n/g, '<br>')).join('');
+    s = parts.map(p => {
+      if (p.startsWith('<pre>')) return p;
+      // Headings
+      p = p.replace(/^### (.+)$/gm, '<h4>$1</h4>');
+      p = p.replace(/^## (.+)$/gm, '<h3>$1</h3>');
+      p = p.replace(/^# (.+)$/gm, '<h2>$1</h2>');
+      // Horizontal rules
+      p = p.replace(/^---+$/gm, '<hr>');
+      // Inline formatting
+      p = p.replace(/`([^`]+)`/g, '<code>$1</code>');
+      p = p.replace(/\*\*([^*]+)\*\*/g, '<strong>$1</strong>');
+      // List items (- or * at start of line)
+      p = p.replace(/^[\-\*] (.+)$/gm, '<li>$1</li>');
+      p = p.replace(/(<li>.*<\/li>\n?)+/g, '<ul>$&</ul>');
+      // Numbered lists
+      p = p.replace(/^\d+\. (.+)$/gm, '<li>$1</li>');
+      // Newlines to <br> for remaining text
+      p = p.replace(/\n/g, '<br>');
+      // Clean up extra <br> around block elements
+      p = p.replace(/<br>(<h[234]>)/g, '$1');
+      p = p.replace(/(<\/h[234]>)<br>/g, '$1');
+      p = p.replace(/<br>(<hr>)<br>/g, '$1');
+      p = p.replace(/<br>(<ul>)/g, '$1');
+      p = p.replace(/(<\/ul>)<br>/g, '$1');
+      return p;
+    }).join('');
     return s;
   },
 
