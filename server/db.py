@@ -281,13 +281,16 @@ async def add_transcript(
 async def get_session_transcripts(
     session_id: str, limit: int = 200, offset: int = 0
 ) -> list[dict]:
-    """Get transcripts for a session."""
+    """Get the latest N transcripts for a session, returned in chronological order."""
     db = await get_db()
+    # Subquery gets the latest `limit` rows, outer query re-orders ASC for display
     cursor = await db.execute(
-        """SELECT * FROM transcripts
-           WHERE session_id = ?
-           ORDER BY timestamp ASC
-           LIMIT ? OFFSET ?""",
+        """SELECT * FROM (
+               SELECT * FROM transcripts
+               WHERE session_id = ?
+               ORDER BY id DESC
+               LIMIT ? OFFSET ?
+           ) sub ORDER BY id ASC""",
         (session_id, limit, offset),
     )
     rows = await cursor.fetchall()
