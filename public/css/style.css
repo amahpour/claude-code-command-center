@@ -377,6 +377,21 @@ body {
 
 .card-pr-link:hover { text-decoration: underline; }
 
+.card-pr-tag {
+  color: var(--status-working);
+  text-decoration: none;
+  font-size: 11px;
+  font-family: var(--font-mono);
+  background: rgba(34, 197, 94, 0.12);
+  padding: 1px 6px;
+  border-radius: 3px;
+}
+
+.card-pr-tag:hover {
+  text-decoration: underline;
+  color: var(--status-working);
+}
+
 .card-ticket-area {
   display: flex;
   align-items: center;

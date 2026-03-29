@@ -81,7 +81,13 @@ const Dashboard = {
 
     let prLink = '';
     if (s.pr_url) {
-      prLink = `<a href="${this._escapeHTML(s.pr_url)}" class="card-pr-link" target="_blank" onclick="event.stopPropagation()">PR &rarr;</a>`;
+      const url = s.pr_url;
+      const isGitLab = url.includes('gitlab');
+      const label = isGitLab ? 'MR' : 'PR';
+      // Extract short ref (e.g., #42) from URL
+      const match = url.match(/\/(?:pull|merge_requests)\/(\d+)/);
+      const ref = match ? `${label} #${match[1]}` : `${label} &rarr;`;
+      prLink = `<a href="${this._escapeHTML(url)}" class="card-pr-tag" target="_blank" onclick="event.stopPropagation()">${ref}</a>`;
     }
 
     let ticketTag = '';
