@@ -77,10 +77,12 @@
         <div class="form-group">
           <label for="jira-keys">Jira Project Keys (comma-separated)</label>
           <input type="text" class="input" id="jira-keys" placeholder="CIT, PLAT, INFRA" />
+          <small class="form-hint">The prefix before the dash in ticket IDs (e.g., <strong>CIT</strong> from CIT-42). Find these in your Jira project settings or board URL.</small>
         </div>
         <div class="form-group">
           <label for="jira-url">Jira Server URL</label>
           <input type="text" class="input" id="jira-url" placeholder="https://company.atlassian.net" />
+          <small class="form-hint">Your Atlassian Cloud URL or self-hosted Jira base URL. Ticket IDs will link to <code>{url}/browse/CIT-42</code>.</small>
         </div>
         <div class="modal-actions">
           <button class="btn" id="settings-cancel">Cancel</button>

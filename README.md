@@ -8,6 +8,8 @@ A web-based command center for monitoring and managing multiple Claude Code sess
 - **Live Transcripts** — Click any session to view its conversation in real-time with collapsible tool calls
 - **Session History** — Browse past sessions with full-text search across transcripts
 - **Analytics** — Track token usage, costs, and session patterns with interactive charts
+- **Jira Integration** — Auto-detects ticket IDs from git branch names (e.g., `feature/CIT-42-login` → `CIT-42`) with clickable links to Jira. Configure project keys and server URL in Settings.
+- **PR/MR Links** — GitHub pull request and GitLab merge request links on session cards
 - **Hook Integration** — Automatically captures session events via Claude Code hooks
 - **JSONL Watcher** — Monitors `~/.claude/projects/` for transcript changes in real-time
 
@@ -89,6 +91,9 @@ FastAPI + uvicorn
 | `/api/hooks` | POST | Receive hook events |
 | `/api/history` | GET | Paginated session history |
 | `/api/search?q=query` | GET | Full-text transcript search |
+| `/api/settings` | GET | Get app settings |
+| `/api/settings` | PUT | Update app settings |
+| `/api/sessions/:id` | PATCH | Update session fields (e.g., ticket_id) |
 | `/api/analytics/summary` | GET | Token/cost summary |
 | `/api/analytics/daily` | GET | Daily usage breakdown |
 
