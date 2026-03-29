@@ -206,8 +206,10 @@ def test_parse_result_type():
     assert entry["content"] == "Task completed successfully"
 
 
-def test_large_tool_input_truncated():
-    large_input = {"data": "x" * 1000}
+def test_large_tool_input_not_truncated():
+    """Tool inputs are no longer truncated — the UI handles overflow."""
+    large_content = "x" * 1000
+    large_input = {"file_path": "/tmp/big.py", "content": large_content}
     line = json.dumps({
         "type": "assistant",
         "message": {
@@ -217,5 +219,5 @@ def test_large_tool_input_truncated():
     })
     entry = _parse_jsonl_entry(line)
     assert entry is not None
-    assert len(entry["content"]) < 600  # Truncated
-    assert "..." in entry["content"]
+    assert "/tmp/big.py" in entry["content"]
+    assert "x" * 100 in entry["content"]  # Full content preserved, not truncated
