@@ -1006,6 +1006,159 @@ body {
   word-break: break-word;
 }
 
+/* ---- Plan Block ---- */
+.plan-block {
+  margin: 8px 0 12px 38px;
+  border: 1px solid var(--border-light);
+  border-left: 3px solid #8b5cf6;
+  border-radius: 0 var(--radius) var(--radius) 0;
+  background: var(--surface-1);
+  overflow: hidden;
+}
+
+.plan-block[data-plan-status="in_progress"] {
+  border-left-color: #f59e0b;
+}
+
+.plan-header {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 8px 12px;
+  background: var(--surface-2);
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--text-secondary);
+  border-bottom: 1px solid var(--border);
+}
+
+.plan-icon { font-size: 14px; }
+
+.plan-title {
+  font-weight: 700;
+  color: var(--text);
+  font-size: 13px;
+}
+
+.plan-status-badge {
+  font-size: 10px;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.4px;
+  padding: 2px 8px;
+  border-radius: 3px;
+}
+
+.plan-status-badge.approved {
+  background: rgba(34, 197, 94, 0.15);
+  color: #22c55e;
+}
+
+.plan-status-badge.in-progress {
+  background: rgba(245, 158, 11, 0.15);
+  color: #f59e0b;
+}
+
+.plan-file {
+  font-family: var(--font-mono);
+  font-size: 11px;
+  color: var(--text-dim);
+  margin-left: auto;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  max-width: 300px;
+}
+
+.plan-content {
+  padding: 12px 16px;
+  font-size: 14px;
+  line-height: 1.6;
+  color: var(--text-secondary);
+  max-height: 500px;
+  overflow-y: auto;
+}
+
+.plan-content h1,
+.plan-content h2,
+.plan-content h3,
+.plan-content h4 {
+  color: var(--text);
+  margin: 12px 0 6px;
+}
+
+.plan-content h1:first-child,
+.plan-content h2:first-child,
+.plan-content h3:first-child {
+  margin-top: 0;
+}
+
+.plan-content ul,
+.plan-content ol {
+  padding-left: 20px;
+  margin: 6px 0;
+}
+
+.plan-content li { margin: 3px 0; }
+
+.plan-content code {
+  font-family: var(--font-mono);
+  font-size: 12px;
+  background: var(--surface-3);
+  padding: 1px 4px;
+  border-radius: 3px;
+}
+
+.plan-content pre {
+  margin: 8px 0;
+  padding: 8px 10px;
+  background: var(--surface-0);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  overflow-x: auto;
+}
+
+.plan-content pre code {
+  background: none;
+  padding: 0;
+  font-size: 11px;
+  color: var(--text-secondary);
+}
+
+.plan-raw-toggle {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 6px 12px;
+  border-top: 1px solid var(--border);
+  font-size: 11px;
+  color: var(--text-dim);
+  cursor: pointer;
+}
+
+.plan-raw-toggle:hover {
+  background: var(--surface-2);
+}
+
+.plan-raw-toggle .tool-chevron {
+  font-size: 10px;
+  transition: transform 0.15s;
+}
+
+.plan-raw-toggle.expanded .tool-chevron {
+  transform: rotate(90deg);
+}
+
+.plan-raw {
+  display: none;
+  border-top: 1px solid var(--border);
+  padding: 8px;
+}
+
+.plan-raw.expanded {
+  display: block;
+}
+
 /* ---- History View ---- */
 .history-header {
   display: flex;

@@ -190,6 +190,12 @@ def _format_tool_summary(name: str, inp: dict) -> str:
     if name_lower in ("taskupdate", "taskcreate"):
         return inp.get("subject", inp.get("description", ""))
 
+    if name_lower in ("enterplanmode",):
+        return inp.get("description", inp.get("reason", "Entering plan mode"))
+
+    if name_lower in ("exitplanmode",):
+        return inp.get("description", inp.get("reason", "Exiting plan mode"))
+
     # Generic: show all fields
     summary_parts = []
     for k, v in inp.items():

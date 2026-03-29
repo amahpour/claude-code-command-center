@@ -140,7 +140,8 @@ const SessionViewer = {
       const container = document.getElementById('transcript-live-messages');
       if (!container) return;
 
-      container.innerHTML = transcripts.map(t => this._renderMessage(t)).join('');
+      const planGroups = this._detectPlanGroups(transcripts);
+      container.innerHTML = this._renderTranscriptWithPlans(transcripts, planGroups);
 
       // Auto-scroll to bottom
       container.scrollTop = container.scrollHeight;
@@ -304,6 +305,170 @@ const SessionViewer = {
     try {
       return new Date(ts).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', second: '2-digit' });
     } catch { return ''; }
+  },
+
+  _detectPlanGroups(transcripts) {
+    const groups = [];
+    let current = null;
+
+    for (let i = 0; i < transcripts.length; i++) {
+      const t = transcripts[i];
+      const content = t.content || '';
+
+      if (!current) {
+        // Look for EnterPlanMode in assistant messages
+        if (t.role === 'assistant' && content.includes('[Tool: EnterPlanMode]')) {
+          current = {
+            startIndex: i,
+            endIndex: null,
+            planContent: null,
+            planFilePath: null,
+            status: 'in_progress',
+            memberIndices: [i],
+          };
+        }
+      } else {
+        current.memberIndices.push(i);
+
+        // Check for plan file Write
+        if (t.role === 'assistant' && content.includes('[Tool: Write]')) {
+          const extracted = this._extractPlanContent(content);
+          if (extracted) {
+            current.planContent = extracted.content;
+            current.planFilePath = extracted.filePath;
+          }
+        }
+
+        // Check for ExitPlanMode
+        if (t.role === 'assistant' && content.includes('[Tool: ExitPlanMode]')) {
+          current.endIndex = i;
+          current.status = 'approved';
+          groups.push(current);
+          current = null;
+        }
+      }
+    }
+
+    // Plan still in progress (no ExitPlanMode yet)
+    if (current) {
+      current.endIndex = transcripts.length - 1;
+      groups.push(current);
+    }
+
+    return groups;
+  },
+
+  _extractPlanContent(content) {
+    // Find the Write tool block that targets a plans directory
+    const lines = content.split('\n');
+    let inWriteBlock = false;
+    let filePath = null;
+    const planLines = [];
+
+    for (const line of lines) {
+      if (line.match(/^\[Tool: Write\]$/)) {
+        inWriteBlock = true;
+        filePath = null;
+        planLines.length = 0;
+        continue;
+      }
+      if (line.match(/^\[Tool: .+\]$/)) {
+        // Hit a different tool block — if we found a plan, stop
+        if (inWriteBlock && filePath) break;
+        inWriteBlock = false;
+        continue;
+      }
+      if (inWriteBlock) {
+        if (!filePath) {
+          const trimmed = line.trim();
+          if (trimmed.includes('.claude/plans/') && trimmed.endsWith('.md')) {
+            filePath = trimmed;
+          } else {
+            inWriteBlock = false; // Not a plan write
+          }
+        } else {
+          planLines.push(line);
+        }
+      }
+    }
+
+    if (filePath) {
+      return { filePath, content: planLines.join('\n').trim() };
+    }
+    return null;
+  },
+
+  _renderTranscriptWithPlans(transcripts, planGroups) {
+    if (planGroups.length === 0) {
+      return transcripts.map(t => this._renderMessage(t)).join('');
+    }
+
+    // Build membership lookup
+    const memberOf = {};
+    for (let g = 0; g < planGroups.length; g++) {
+      for (const idx of planGroups[g].memberIndices) {
+        memberOf[idx] = g;
+      }
+    }
+
+    const parts = [];
+    const rendered = new Set();
+
+    for (let i = 0; i < transcripts.length; i++) {
+      if (memberOf[i] !== undefined) {
+        const groupIdx = memberOf[i];
+        if (!rendered.has(groupIdx)) {
+          rendered.add(groupIdx);
+          parts.push(this._renderPlanBlock(planGroups[groupIdx], transcripts));
+        }
+        // Skip individual entries that belong to a plan group
+      } else {
+        parts.push(this._renderMessage(transcripts[i]));
+      }
+    }
+
+    return parts.join('');
+  },
+
+  _renderPlanBlock(group, transcripts) {
+    const statusClass = group.status === 'approved' ? 'approved' : 'in-progress';
+    const statusLabel = group.status === 'approved' ? 'Approved' : 'In Progress';
+    const time = transcripts[group.startIndex].timestamp
+      ? this._fmtTime(transcripts[group.startIndex].timestamp) : '';
+    const fileDisplay = group.planFilePath
+      ? group.planFilePath.replace(/^.*\.claude\/plans\//, '') : '';
+
+    // Render plan content as markdown
+    const planHtml = group.planContent
+      ? this._fmtText(group.planContent)
+      : '<em style="color: var(--text-dim)">No plan content found</em>';
+
+    // Render raw tool calls for the expandable section
+    const rawHtml = group.memberIndices
+      .map(idx => this._renderMessage(transcripts[idx]))
+      .join('');
+    const callCount = group.memberIndices.length;
+
+    const uid = Math.random().toString(36).slice(2, 8);
+
+    return `
+      <div class="plan-block" data-plan-status="${group.status}">
+        <div class="plan-header">
+          <span class="plan-icon">&#128203;</span>
+          <span class="plan-title">Plan</span>
+          <span class="plan-status-badge ${statusClass}">${statusLabel}</span>
+          <span class="plan-file" title="${this._escapeHTML(group.planFilePath || '')}">${this._escapeHTML(fileDisplay)}</span>
+          <span class="transcript-live-time">${time}</span>
+        </div>
+        <div class="plan-content chat-content">${planHtml}</div>
+        <div class="plan-raw-toggle" onclick="this.classList.toggle('expanded'); document.getElementById('plan-raw-${uid}').classList.toggle('expanded')">
+          <span class="tool-chevron">&#9656;</span>
+          <span>Show raw tool calls (${callCount} entries)</span>
+        </div>
+        <div class="plan-raw" id="plan-raw-${uid}">
+          ${rawHtml}
+        </div>
+      </div>`;
   },
 
   _escapeHTML(str) {
