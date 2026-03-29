@@ -8,9 +8,10 @@ from fastapi import FastAPI
 from fastapi.staticfiles import StaticFiles
 
 from server.db import init_db, close_db
-from server.hooks import start_stale_checker, stop_stale_checker
+from server.hooks import start_stale_checker, stop_stale_checker, set_update_callback
 from server.watcher import start_watcher, stop_watcher
 from server.routes.api import router as api_router
+from server.routes.ws import router as ws_router, broadcast_session_update
 
 logging.basicConfig(level=logging.INFO)
 
@@ -19,6 +20,7 @@ logging.basicConfig(level=logging.INFO)
 async def lifespan(app: FastAPI):
     """Manage application startup and shutdown."""
     await init_db()
+    set_update_callback(broadcast_session_update)
     start_stale_checker()
     await start_watcher()
     yield
@@ -29,8 +31,9 @@ async def lifespan(app: FastAPI):
 
 app = FastAPI(title="Claude Code Command Center", lifespan=lifespan)
 
-# Include API routes
+# Include API and WebSocket routes
 app.include_router(api_router)
+app.include_router(ws_router)
 
 # Mount static files (must be last — catches all unmatched routes)
 static_dir = Path(__file__).parent.parent / "public"
