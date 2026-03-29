@@ -535,6 +535,116 @@ body {
 
 .modal h2 { margin-bottom: 20px; font-size: 16px; font-weight: 600; }
 
+/* ---- Settings Modal (tabbed panel) ---- */
+.settings-modal {
+  max-width: 720px;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  max-height: 85vh;
+  overflow: hidden;
+}
+
+.settings-modal h2 { margin-bottom: 0; }
+
+.settings-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 16px 24px;
+  border-bottom: 1px solid var(--border);
+}
+
+.settings-close {
+  background: none;
+  border: none;
+  color: var(--text-dim);
+  font-size: 18px;
+  cursor: pointer;
+  padding: 4px 8px;
+  border-radius: var(--radius);
+}
+
+.settings-close:hover { color: var(--text); background: var(--surface-3); }
+
+.settings-body {
+  display: flex;
+  flex: 1;
+  overflow: hidden;
+}
+
+.settings-sidebar {
+  width: 180px;
+  min-width: 180px;
+  border-right: 1px solid var(--border);
+  padding: 12px 0;
+  background: var(--surface-0);
+}
+
+.settings-tab {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  width: 100%;
+  padding: 8px 16px;
+  background: none;
+  border: none;
+  border-left: 2px solid transparent;
+  color: var(--text-dim);
+  font-size: 13px;
+  font-family: var(--font-sans);
+  cursor: pointer;
+  text-align: left;
+  transition: all var(--transition);
+}
+
+.settings-tab:hover { color: var(--text-secondary); background: var(--surface-2); }
+
+.settings-tab.active {
+  color: var(--text);
+  background: var(--surface-2);
+  border-left-color: var(--accent);
+  font-weight: 500;
+}
+
+.settings-content {
+  flex: 1;
+  padding: 20px 24px;
+  overflow-y: auto;
+}
+
+.settings-panel { display: none; }
+.settings-panel.active { display: block; }
+
+.settings-section { margin-bottom: 24px; }
+.settings-section:last-child { margin-bottom: 0; }
+
+.section-title {
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--text-dim);
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+  margin-bottom: 12px;
+  padding-bottom: 6px;
+  border-bottom: 1px solid var(--border);
+}
+
+.settings-footer {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 12px 24px;
+  border-top: 1px solid var(--border);
+  background: var(--surface-0);
+}
+
+.settings-footer .modal-actions { margin-top: 0; }
+
+.save-indicator { font-size: 11px; color: var(--text-faint); }
+.save-indicator.saved { color: #3fb950; }
+.save-indicator.error { color: #f85149; }
+
 .form-group { margin-bottom: 16px; }
 
 .form-group label {

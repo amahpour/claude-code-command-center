@@ -91,18 +91,34 @@ const App = {
     const modal = document.getElementById('settings-modal');
     const btn = document.getElementById('settings-btn');
     const cancel = document.getElementById('settings-cancel');
+    const close = document.getElementById('settings-close');
     const save = document.getElementById('settings-save');
+    const indicator = document.getElementById('settings-indicator');
 
-    btn.addEventListener('click', () => {
+    const openModal = () => {
       const keys = this.settings.jira_project_keys || [];
       document.getElementById('jira-keys').value = keys.join(', ');
       document.getElementById('jira-url').value = this.settings.jira_server_url || '';
+      indicator.textContent = '';
+      indicator.className = 'save-indicator';
       modal.style.display = 'flex';
-    });
+    };
 
-    cancel.addEventListener('click', () => { modal.style.display = 'none'; });
-    modal.addEventListener('click', (e) => {
-      if (e.target === modal) modal.style.display = 'none';
+    const closeModal = () => { modal.style.display = 'none'; };
+
+    btn.addEventListener('click', openModal);
+    cancel.addEventListener('click', closeModal);
+    close.addEventListener('click', closeModal);
+    modal.addEventListener('click', (e) => { if (e.target === modal) closeModal(); });
+
+    // Tab switching
+    modal.querySelectorAll('.settings-tab').forEach(tab => {
+      tab.addEventListener('click', () => {
+        modal.querySelectorAll('.settings-tab').forEach(t => t.classList.remove('active'));
+        modal.querySelectorAll('.settings-panel').forEach(p => p.classList.remove('active'));
+        tab.classList.add('active');
+        document.getElementById('tab-' + tab.dataset.tab).classList.add('active');
+      });
     });
 
     save.addEventListener('click', async () => {
@@ -120,9 +136,13 @@ const App = {
         });
         const data = await resp.json();
         this.settings = data.settings || {};
-        modal.style.display = 'none';
+        indicator.textContent = 'Settings saved';
+        indicator.className = 'save-indicator saved';
+        setTimeout(() => { indicator.textContent = ''; indicator.className = 'save-indicator'; }, 2000);
       } catch (e) {
         console.error('Failed to save settings:', e);
+        indicator.textContent = 'Failed to save';
+        indicator.className = 'save-indicator error';
       }
     });
   },
