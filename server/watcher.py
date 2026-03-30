@@ -415,7 +415,7 @@ async def _process_file_changes(file_path: str):
     if session is None:
         await db.create_session(session_id, project_path=str(Path(file_path).parent))
         if parent_id:
-            await db.update_session(session_id, parent_session_id=parent_id)
+            await db.update_session(session_id, parent_session_id=parent_id, status="working")
 
     # Track latest usage from new entries (not cumulative — use most recent snapshot)
     latest_input = 0
