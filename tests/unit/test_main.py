@@ -1,16 +1,16 @@
 """Tests for the main FastAPI app entry point."""
 
-import pytest
-from unittest.mock import AsyncMock, patch, MagicMock
+from unittest.mock import AsyncMock, patch
 
 from starlette.testclient import TestClient
 
 
 async def test_no_cache_middleware():
     """NoCacheStaticMiddleware adds no-cache headers to static files."""
-    from server.main import NoCacheStaticMiddleware
-    from fastapi import FastAPI, Request
+    from fastapi import FastAPI
     from starlette.responses import PlainTextResponse
+
+    from server.main import NoCacheStaticMiddleware
 
     app = FastAPI()
 
@@ -38,19 +38,21 @@ async def test_no_cache_middleware():
 
 async def test_lifespan():
     """Test that lifespan initializes and cleans up resources."""
-    from server.main import lifespan
     from fastapi import FastAPI
+
+    from server.main import lifespan
 
     app = FastAPI()
 
-    with patch("server.main.init_db", new_callable=AsyncMock) as mock_init, \
-         patch("server.main.close_db", new_callable=AsyncMock) as mock_close, \
-         patch("server.main.set_update_callback") as mock_set_cb, \
-         patch("server.main.start_stale_checker") as mock_start_stale, \
-         patch("server.main.stop_stale_checker") as mock_stop_stale, \
-         patch("server.main.start_watcher", new_callable=AsyncMock) as mock_start_watcher, \
-         patch("server.main.stop_watcher") as mock_stop_watcher:
-
+    with (
+        patch("server.main.init_db", new_callable=AsyncMock) as mock_init,
+        patch("server.main.close_db", new_callable=AsyncMock) as mock_close,
+        patch("server.main.set_update_callback") as mock_set_cb,
+        patch("server.main.start_stale_checker") as mock_start_stale,
+        patch("server.main.stop_stale_checker") as mock_stop_stale,
+        patch("server.main.start_watcher", new_callable=AsyncMock) as mock_start_watcher,
+        patch("server.main.stop_watcher") as mock_stop_watcher,
+    ):
         async with lifespan(app):
             mock_init.assert_called_once()
             mock_set_cb.assert_called_once()
@@ -65,4 +67,5 @@ async def test_lifespan():
 def test_app_exists():
     """Test that the app is properly configured."""
     from server.main import app
+
     assert app.title == "Claude Code Command Center"

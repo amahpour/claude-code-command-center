@@ -1,15 +1,16 @@
 """Tests for terminal/PTY management."""
 
 import subprocess
+from unittest.mock import MagicMock, patch
+
 import pytest
-from unittest.mock import patch, MagicMock
 
 from server.terminal import (
-    _tmux_session_name,
     _session_tmux_map,
+    _tmux_session_name,
     launch_session,
-    stop_session,
     list_tmux_sessions,
+    stop_session,
 )
 
 
@@ -91,6 +92,7 @@ async def test_list_tmux_sessions_with_data():
 async def test_attach_session_not_in_map():
     """Test attach_session when session not in map and tmux doesn't have it."""
     from server.terminal import attach_session
+
     with patch("server.terminal._run_tmux") as mock_tmux:
         mock_tmux.return_value = MagicMock(returncode=1, stdout="", stderr="no session")
         result = await attach_session("nonexistent-sess")
@@ -100,6 +102,7 @@ async def test_attach_session_not_in_map():
 async def test_attach_session_tmux_not_found():
     """Test attach_session when tmux binary is not found."""
     from server.terminal import attach_session
+
     with patch("server.terminal._run_tmux", side_effect=FileNotFoundError):
         result = await attach_session("no-tmux-sess")
         assert result is None
@@ -107,8 +110,9 @@ async def test_attach_session_tmux_not_found():
 
 async def test_detach_session():
     """Test detach_session closes fd and cleans up."""
-    from server.terminal import detach_session, _attached_fds
     import os
+
+    from server.terminal import _attached_fds, detach_session
 
     # Create a real fd pair so os.close works
     r, w = os.pipe()
@@ -123,7 +127,8 @@ async def test_detach_session():
 
 async def test_detach_session_already_closed():
     """Test detach_session when fd is already closed."""
-    from server.terminal import detach_session, _attached_fds
+    from server.terminal import _attached_fds, detach_session
+
     _attached_fds["detach-closed"] = [9999]
 
     # Should not raise even if fd is invalid
@@ -133,8 +138,9 @@ async def test_detach_session_already_closed():
 
 async def test_detach_session_fd_not_in_list():
     """Test detach_session when fd is not in the attached list."""
-    from server.terminal import detach_session, _attached_fds
     import os
+
+    from server.terminal import _attached_fds, detach_session
 
     r, w = os.pipe()
     _attached_fds["detach-missing"] = [r]
@@ -150,8 +156,10 @@ async def test_detach_session_fd_not_in_list():
 
 async def test_stop_session_with_tmux_name_in_map():
     """Test stop_session when session is tracked in the map."""
-    from server.terminal import stop_session as term_stop, _session_tmux_map, _attached_fds
     import os
+
+    from server.terminal import _attached_fds, _session_tmux_map
+    from server.terminal import stop_session as term_stop
 
     _session_tmux_map["stop-test"] = "cccc-stop-test"
     r, w = os.pipe()
@@ -168,7 +176,8 @@ async def test_stop_session_with_tmux_name_in_map():
 
 async def test_stop_session_tmux_timeout():
     """Test stop_session when tmux times out."""
-    from server.terminal import stop_session as term_stop, _session_tmux_map
+    from server.terminal import _session_tmux_map
+    from server.terminal import stop_session as term_stop
 
     with patch("server.terminal._run_tmux", side_effect=subprocess.TimeoutExpired("tmux", 10)):
         await term_stop("timeout-sess")  # Should not raise
@@ -186,17 +195,18 @@ async def test_list_tmux_sessions_timeout():
 def test_run_tmux():
     """Test _run_tmux helper."""
     from server.terminal import _run_tmux
+
     with patch("subprocess.run") as mock_run:
         mock_run.return_value = MagicMock(returncode=0)
-        result = _run_tmux("list-sessions", check=False)
+        _run_tmux("list-sessions", check=False)
         mock_run.assert_called_once()
         assert "tmux" in mock_run.call_args[0][0]
 
 
 async def test_attach_session_found_in_tmux():
     """Test attach when session is in tmux but not in map."""
-    from server.terminal import attach_session, _session_tmux_map
-    import asyncio
+
+    from server.terminal import _session_tmux_map, attach_session
 
     with patch("server.terminal._run_tmux") as mock_tmux:
         # has-session returns 0 (session exists)
@@ -206,6 +216,7 @@ async def test_attach_session_found_in_tmux():
                 mock_exec.return_value = MagicMock()
                 # Make it an awaitable
                 import asyncio as aio
+
                 future = aio.Future()
                 future.set_result(MagicMock())
                 mock_exec.return_value = future
@@ -218,7 +229,7 @@ async def test_attach_session_found_in_tmux():
 
 async def test_attach_session_subprocess_fails():
     """Test attach when subprocess creation fails."""
-    from server.terminal import attach_session, _session_tmux_map
+    from server.terminal import _session_tmux_map, attach_session
 
     with patch("server.terminal._run_tmux") as mock_tmux:
         mock_tmux.return_value = MagicMock(returncode=0)
@@ -235,7 +246,8 @@ async def test_attach_session_subprocess_fails():
 
 async def test_stop_session_closes_attached_fds():
     """Test that stop_session closes all attached FDs."""
-    from server.terminal import stop_session as term_stop, _session_tmux_map, _attached_fds
+    from server.terminal import _attached_fds, _session_tmux_map
+    from server.terminal import stop_session as term_stop
 
     _session_tmux_map["stop-fds"] = "cccc-stop-fds"
     _attached_fds["stop-fds"] = [1001, 1002]
@@ -251,7 +263,8 @@ async def test_stop_session_closes_attached_fds():
 
 async def test_stop_session_closes_fd_os_error():
     """Test stop_session handles OSError when closing fds."""
-    from server.terminal import stop_session as term_stop, _session_tmux_map, _attached_fds
+    from server.terminal import _attached_fds, _session_tmux_map
+    from server.terminal import stop_session as term_stop
 
     _session_tmux_map["stop-oserr"] = "cccc-stop-oserr"
     _attached_fds["stop-oserr"] = [9998, 9999]

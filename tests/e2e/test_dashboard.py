@@ -4,7 +4,6 @@ These tests start a real server and use a browser to verify the UI.
 Run with: pytest tests/e2e/ -v
 """
 
-import asyncio
 import multiprocessing
 import time
 
@@ -17,7 +16,9 @@ SERVER_URL = f"http://localhost:{SERVER_PORT}"
 def _run_server():
     """Run the server in a separate process."""
     import uvicorn
+
     from server.main import app
+
     uvicorn.run(app, host="127.0.0.1", port=SERVER_PORT, log_level="warning")
 
 
@@ -36,6 +37,7 @@ def server():
 def pw_browser(server):
     """Launch a Playwright browser for the module."""
     from playwright.sync_api import sync_playwright
+
     with sync_playwright() as p:
         browser = p.chromium.launch(headless=True)
         yield browser

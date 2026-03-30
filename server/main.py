@@ -5,27 +5,28 @@ from contextlib import asynccontextmanager
 from pathlib import Path
 
 from fastapi import FastAPI, Request
-from fastapi.middleware.cors import CORSMiddleware
 from fastapi.staticfiles import StaticFiles
 from starlette.middleware.base import BaseHTTPMiddleware
-from starlette.responses import Response
+
+from server.db import close_db, init_db
+from server.hooks import set_update_callback, start_stale_checker, stop_stale_checker
+from server.routes.api import router as api_router
+from server.routes.ws import broadcast_session_update
+from server.routes.ws import router as ws_router
+from server.watcher import start_watcher, stop_watcher
 
 
 class NoCacheStaticMiddleware(BaseHTTPMiddleware):
     """Disable caching for static files during development."""
+
     async def dispatch(self, request: Request, call_next):
         response = await call_next(request)
-        if request.url.path.endswith(('.js', '.css', '.html')):
+        if request.url.path.endswith((".js", ".css", ".html")):
             response.headers["Cache-Control"] = "no-cache, no-store, must-revalidate"
             response.headers["Pragma"] = "no-cache"
             response.headers["Expires"] = "0"
         return response
 
-from server.db import init_db, close_db
-from server.hooks import start_stale_checker, stop_stale_checker, set_update_callback
-from server.watcher import start_watcher, stop_watcher
-from server.routes.api import router as api_router
-from server.routes.ws import router as ws_router, broadcast_session_update
 
 logging.basicConfig(level=logging.INFO)
 

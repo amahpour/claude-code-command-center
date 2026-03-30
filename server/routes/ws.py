@@ -43,11 +43,16 @@ async def dashboard_ws(websocket: WebSocket):
     try:
         # Send initial state
         from server.db import get_all_active_sessions
+
         sessions = await get_all_active_sessions()
-        await websocket.send_text(json.dumps({
-            "type": "initial_state",
-            "sessions": sessions,
-        }))
+        await websocket.send_text(
+            json.dumps(
+                {
+                    "type": "initial_state",
+                    "sessions": sessions,
+                }
+            )
+        )
 
         # Keep connection alive, handle pings
         while True:
@@ -78,10 +83,14 @@ async def terminal_ws(websocket: WebSocket, session_id: str):
 
         pty_fd = await attach_session(session_id)
         if pty_fd is None:
-            await websocket.send_text(json.dumps({
-                "type": "error",
-                "message": f"No terminal found for session {session_id}",
-            }))
+            await websocket.send_text(
+                json.dumps(
+                    {
+                        "type": "error",
+                        "message": f"No terminal found for session {session_id}",
+                    }
+                )
+            )
             await websocket.close()
             return
 
@@ -121,10 +130,14 @@ async def terminal_ws(websocket: WebSocket, session_id: str):
     except Exception as e:
         logger.exception("Terminal WebSocket error for session %s", session_id)
         try:
-            await websocket.send_text(json.dumps({
-                "type": "error",
-                "message": str(e),
-            }))
+            await websocket.send_text(
+                json.dumps(
+                    {
+                        "type": "error",
+                        "message": str(e),
+                    }
+                )
+            )
         except Exception:
             pass
     finally:
@@ -139,6 +152,7 @@ def _read_pty_safe(fd) -> bytes | None:
     """Read from a PTY file descriptor safely."""
     import os
     import select
+
     try:
         r, _, _ = select.select([fd], [], [], 0.1)
         if r:
@@ -151,6 +165,7 @@ def _read_pty_safe(fd) -> bytes | None:
 def _write_pty_safe(fd, data: bytes):
     """Write to a PTY file descriptor safely."""
     import os
+
     try:
         os.write(fd, data)
     except (OSError, ValueError):

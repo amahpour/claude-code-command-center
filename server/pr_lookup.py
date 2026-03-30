@@ -32,7 +32,8 @@ def _get_github_token(host: str = "github.com") -> str | None:
     gh_config = os.path.expanduser("~/.config/gh/hosts.yml")
     if os.path.isfile(gh_config):
         try:
-            import yaml
+            import yaml  # type: ignore[import-untyped]
+
             with open(gh_config) as f:
                 hosts = yaml.safe_load(f)
             if hosts and host in hosts:
@@ -123,8 +124,7 @@ async def find_pr_url(project_path: str, branch: str) -> str | None:
         else:
             return await _find_gitlab_mr(remote, branch)
     except Exception:
-        logger.debug("PR lookup failed for %s/%s branch %s",
-                     remote["owner"], remote["repo"], branch, exc_info=True)
+        logger.debug("PR lookup failed for %s/%s branch %s", remote["owner"], remote["repo"], branch, exc_info=True)
         return None
 
 
@@ -134,7 +134,7 @@ async def _find_github_pr(remote: dict, branch: str) -> str | None:
     owner, repo = remote["owner"], remote["repo"]
     api_host = f"api.{remote['host']}" if remote["host"] == "github.com" else remote["host"]
     url = f"https://{api_host}/repos/{owner}/{repo}/pulls"
-    params = {"head": f"{owner}:{branch}", "state": "open", "per_page": 1}
+    params: dict[str, str | int] = {"head": f"{owner}:{branch}", "state": "open", "per_page": 1}
 
     headers = {"Accept": "application/vnd.github+json"}
     token = _get_github_token(remote["host"])
@@ -156,7 +156,7 @@ async def _find_gitlab_mr(remote: dict, branch: str) -> str | None:
     client = _get_client()
     project_id = quote(remote["full_path"], safe="")
     url = f"https://{remote['host']}/api/v4/projects/{project_id}/merge_requests"
-    params = {"source_branch": branch, "state": "opened", "per_page": 1}
+    params: dict[str, str | int] = {"source_branch": branch, "state": "opened", "per_page": 1}
 
     headers = {}
     token = _get_gitlab_token()

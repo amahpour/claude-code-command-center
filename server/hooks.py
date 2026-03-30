@@ -5,7 +5,7 @@ import json
 import logging
 import os
 import subprocess
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 
 from server import db
 
@@ -74,7 +74,7 @@ async def process_hook_event(event_data: dict) -> dict | None:
         logger.warning("Hook event missing session_id: %s", event_type)
         return None
 
-    now = datetime.now(timezone.utc).isoformat()
+    now = datetime.now(UTC).isoformat()
     project_path = event_data.get("cwd") or event_data.get("project_path")
     session = await db.get_session(session_id)
 
@@ -95,7 +95,7 @@ async def process_hook_event(event_data: dict) -> dict | None:
 
     # Always update project info from cwd if we have it and session is missing it
     base_updates: dict = {"last_activity_at": now}
-    if project_path and not session.get("project_name"):
+    if project_path and session and not session.get("project_name"):
         base_updates["project_path"] = project_path
         base_updates["project_name"] = project_path.rsplit("/", 1)[-1] if "/" in project_path else project_path
         git_branch = _extract_git_branch(project_path)
@@ -142,10 +142,7 @@ async def process_hook_event(event_data: dict) -> dict | None:
                 base_updates["context_usage_percent"] = (event_data["context_tokens"] / max_ctx) * 100
         session = await db.update_session(session_id, **base_updates)
 
-    elif event_type == "SubagentStart":
-        session = await db.update_session(session_id, **base_updates)
-
-    elif event_type == "SubagentStop":
+    elif event_type == "SubagentStart" or event_type == "SubagentStop":
         session = await db.update_session(session_id, **base_updates)
 
     elif event_type == "Notification":
@@ -172,7 +169,7 @@ async def _check_stale_sessions():
         try:
             await asyncio.sleep(60)
             sessions = await db.get_all_active_sessions()
-            now = datetime.now(timezone.utc)
+            now = datetime.now(UTC)
             for session in sessions:
                 if session["status"] in ("completed", "stale"):
                     continue
@@ -182,7 +179,7 @@ async def _check_stale_sessions():
                 try:
                     last_dt = datetime.fromisoformat(last_activity.replace("Z", "+00:00"))
                     if last_dt.tzinfo is None:
-                        last_dt = last_dt.replace(tzinfo=timezone.utc)
+                        last_dt = last_dt.replace(tzinfo=UTC)
                     diff = (now - last_dt).total_seconds()
                     if diff > 300:  # 5 minutes
                         updated = await db.update_session(session["id"], status="stale")

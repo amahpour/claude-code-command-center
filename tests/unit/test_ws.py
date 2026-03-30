@@ -2,15 +2,15 @@
 
 import json
 import os
-from unittest.mock import AsyncMock, MagicMock, patch
+from unittest.mock import AsyncMock, patch
 
 import pytest
 
 from server.routes.ws import (
-    broadcast_session_update,
     _dashboard_clients,
     _read_pty_safe,
     _write_pty_safe,
+    broadcast_session_update,
 )
 
 
@@ -110,25 +110,26 @@ async def test_dashboard_ws_lifecycle():
     """Test dashboard WebSocket connect, initial state, ping/pong, disconnect."""
     from fastapi import FastAPI
     from starlette.testclient import TestClient
+
     import server.db as db
 
     await db.init_db(":memory:")
 
     app = FastAPI()
     from server.routes.ws import router
+
     app.include_router(router)
 
-    with TestClient(app) as client:
-        with client.websocket_connect("/ws/dashboard") as ws:
-            # Should receive initial_state
-            data = ws.receive_json()
-            assert data["type"] == "initial_state"
-            assert "sessions" in data
+    with TestClient(app) as client, client.websocket_connect("/ws/dashboard") as ws:
+        # Should receive initial_state
+        data = ws.receive_json()
+        assert data["type"] == "initial_state"
+        assert "sessions" in data
 
-            # Send ping, receive pong
-            ws.send_text("ping")
-            pong = ws.receive_json()
-            assert pong["type"] == "pong"
+        # Send ping, receive pong
+        ws.send_text("ping")
+        pong = ws.receive_json()
+        assert pong["type"] == "pong"
 
     await db.close_db()
 
@@ -137,8 +138,9 @@ async def test_terminal_ws_no_session():
     """Test terminal WebSocket when no terminal session exists."""
     from fastapi import FastAPI
     from starlette.testclient import TestClient
+
     import server.db as db
-    from server.routes.ws import router, _terminal_clients
+    from server.routes.ws import router
 
     await db.init_db(":memory:")
 
@@ -159,7 +161,7 @@ async def test_terminal_ws_with_session():
     """Test terminal WebSocket with a mock PTY."""
     from fastapi import FastAPI
     from starlette.testclient import TestClient
-    from starlette.websockets import WebSocketDisconnect
+
     import server.db as db
     from server.routes.ws import router
 
@@ -191,6 +193,7 @@ async def test_terminal_ws_send_text():
     """Test terminal WebSocket receiving text data and writing to PTY."""
     from fastapi import FastAPI
     from starlette.testclient import TestClient
+
     import server.db as db
     from server.routes.ws import router
 
@@ -230,6 +233,7 @@ async def test_terminal_ws_send_bytes():
     """Test terminal WebSocket receiving binary data."""
     from fastapi import FastAPI
     from starlette.testclient import TestClient
+
     import server.db as db
     from server.routes.ws import router
 
@@ -258,6 +262,7 @@ async def test_terminal_ws_exception_handling():
     """Test terminal WebSocket error path."""
     from fastapi import FastAPI
     from starlette.testclient import TestClient
+
     import server.db as db
     from server.routes.ws import router
 
@@ -279,18 +284,18 @@ async def test_dashboard_ws_exception_path():
     """Test dashboard WebSocket general exception handling."""
     from fastapi import FastAPI
     from starlette.testclient import TestClient
+
     import server.db as db
-    from server.routes.ws import router, _dashboard_clients
+    from server.routes.ws import _dashboard_clients, router
 
     await db.init_db(":memory:")
 
     app = FastAPI()
     app.include_router(router)
 
-    with TestClient(app) as client:
-        with client.websocket_connect("/ws/dashboard") as ws:
-            data = ws.receive_json()
-            assert data["type"] == "initial_state"
+    with TestClient(app) as client, client.websocket_connect("/ws/dashboard") as ws:
+        data = ws.receive_json()
+        assert data["type"] == "initial_state"
 
     # Client disconnected, should be removed
     assert len(_dashboard_clients) == 0

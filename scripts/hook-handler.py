@@ -7,8 +7,8 @@ Must NEVER block Claude Code — exits silently on any error.
 
 import json
 import sys
-import urllib.request
 import urllib.error
+import urllib.request
 
 SERVER_URL = "http://localhost:3000/api/hooks"
 TIMEOUT = 5
@@ -38,8 +38,7 @@ def main():
         )
         urllib.request.urlopen(req, timeout=TIMEOUT)
 
-    except (json.JSONDecodeError, urllib.error.URLError, urllib.error.HTTPError,
-            OSError, TimeoutError, Exception):
+    except (json.JSONDecodeError, urllib.error.URLError, urllib.error.HTTPError, OSError, TimeoutError, Exception):
         # Never block Claude Code — exit silently on any error
         pass
 

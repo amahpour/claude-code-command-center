@@ -19,7 +19,31 @@ dev = [
     "pytest-asyncio>=0.21.0",
     "httpx>=0.24.0",
     "playwright>=1.40.0",
+    "ruff>=0.8.0",
+    "mypy>=1.13.0",
 ]
+
+[tool.ruff]
+target-version = "py312"
+line-length = 120
+
+[tool.ruff.lint]
+select = ["E", "F", "W", "I", "UP", "B", "SIM"]
+ignore = [
+    "SIM105",  # contextlib.suppress — stylistic
+    "SIM117",  # nested with — often clearer in tests
+    "SIM114",  # combine if branches — stylistic
+    "E501",    # line length — handled by formatter
+]
+
+[tool.mypy]
+python_version = "3.12"
+warn_unused_configs = true
+disallow_untyped_defs = false
+check_untyped_defs = true
+ignore_missing_imports = true
+no_implicit_reexport = false
+warn_return_any = false
 
 [tool.pytest.ini_options]
 asyncio_mode = "auto"
