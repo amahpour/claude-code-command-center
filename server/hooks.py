@@ -150,9 +150,6 @@ async def process_hook_event(event_data: dict) -> dict | None:
 
     elif event_type == "Notification":
         base_updates["status"] = "waiting"
-        message = event_data.get("message", "")
-        if message:
-            base_updates["task_description"] = message
         session = await db.update_session(session_id, **base_updates)
 
     elif event_type == "SessionEnd":

@@ -113,7 +113,8 @@ async def test_notification_event():
         "message": "Waiting for permission to write file",
     })
     assert result["status"] == "waiting"
-    assert result["task_description"] == "Waiting for permission to write file"
+    # Notification should NOT overwrite task_description
+    assert result.get("task_description") is None
 
 
 async def test_subagent_events():
