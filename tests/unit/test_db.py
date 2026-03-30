@@ -237,9 +237,7 @@ async def test_subagent_columns_exist():
     assert session.get("parent_session_id") is None
     assert session.get("agent_type") is None
 
-    updated = await db.update_session(
-        "sub-col-1", parent_session_id="parent-1", agent_type="codegen"
-    )
+    updated = await db.update_session("sub-col-1", parent_session_id="parent-1", agent_type="codegen")
     assert updated["parent_session_id"] == "parent-1"
     assert updated["agent_type"] == "codegen"
 
