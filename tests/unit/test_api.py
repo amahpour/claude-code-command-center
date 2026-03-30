@@ -307,3 +307,66 @@ async def test_stop_session_error(client: AsyncClient):
     with patch("server.terminal.stop_session", new_callable=AsyncMock, side_effect=Exception("tmux error")):
         resp = await client.post("/api/sessions/stop-err/stop")
         assert resp.status_code == 500
+
+
+async def test_list_sessions_includes_subagents(client: AsyncClient):
+    """GET /api/sessions includes subagents nested inside their parent."""
+    from server.hooks import process_hook_event
+
+    await process_hook_event(
+        {
+            "event_type": "SessionStart",
+            "session_id": "api-parent-1",
+            "cwd": "/tmp/proj",
+        }
+    )
+    await process_hook_event(
+        {
+            "event_type": "SubagentStart",
+            "session_id": "api-parent-1",
+            "agent_id": "api-sub-1",
+            "agent_type": "codegen",
+        }
+    )
+
+    resp = await client.get("/api/sessions")
+    assert resp.status_code == 200
+    sessions = resp.json()["sessions"]
+    # The subagent should NOT appear as a top-level session
+    top_ids = [s["id"] for s in sessions]
+    assert "api-parent-1" in top_ids
+    assert "api-sub-1" not in top_ids
+    # The parent should have a subagents array
+    parent = next(s for s in sessions if s["id"] == "api-parent-1")
+    assert len(parent["subagents"]) == 1
+    assert parent["subagents"][0]["id"] == "api-sub-1"
+
+
+async def test_get_session_includes_subagents(client: AsyncClient):
+    """GET /api/sessions/{id} includes subagents array."""
+    from server.hooks import process_hook_event
+
+    await process_hook_event(
+        {
+            "event_type": "SessionStart",
+            "session_id": "api-detail-1",
+            "cwd": "/tmp/proj",
+        }
+    )
+    await process_hook_event(
+        {
+            "event_type": "SubagentStart",
+            "session_id": "api-detail-1",
+            "agent_id": "api-detail-sub-1",
+            "agent_type": "research",
+        }
+    )
+
+    resp = await client.get("/api/sessions/api-detail-1")
+    assert resp.status_code == 200
+    data = resp.json()
+    session = data["session"]
+    assert "subagents" in session
+    assert len(session["subagents"]) == 1
+    assert session["subagents"][0]["id"] == "api-detail-sub-1"
+    assert session["subagents"][0]["agent_type"] == "research"

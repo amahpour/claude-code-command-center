@@ -3,6 +3,9 @@
  */
 
 const Dashboard = {
+  _expandedSubagentSections: new Set(),
+  _expandedSubagentTranscripts: new Set(),
+
   _emptyHTML: `<div class="empty-state" id="empty-state">
       <div class="empty-icon">&#9678;</div>
       <h2>No active sessions</h2>
@@ -51,6 +54,13 @@ const Dashboard = {
     const existing = document.querySelector(`.session-card[data-session-id="${session.id}"]`);
     if (existing) {
       existing.innerHTML = this._cardHTML(session);
+      // Reload transcripts for any expanded subagent transcripts
+      this._expandedSubagentTranscripts.forEach(agentId => {
+        const container = document.getElementById(`subagent-transcript-${agentId}`);
+        if (container && container.style.display !== 'none') {
+          this._loadSubagentTranscript(agentId, container);
+        }
+      });
     } else {
       // New session — add card
       const grid = document.getElementById('session-grid');
@@ -148,6 +158,7 @@ const Dashboard = {
           <div class="context-bar-fill ${contextClass}" style="width: ${contextPercent}%"></div>
         </div>
       </div>
+      ${this._subagentsHTML(s.subagents)}
       <div class="card-footer">
         <span class="card-footer-left">
           <span class="card-cost">$${(s.cost_usd || 0).toFixed(4)}</span>
@@ -298,5 +309,91 @@ const Dashboard = {
     const div = document.createElement('div');
     div.textContent = str;
     return div.innerHTML;
+  },
+
+  _subagentsHTML(subagents) {
+    if (!subagents || subagents.length === 0) return '';
+    // Only show actively working subagents in the tile
+    const running = subagents.filter(a => a.status === 'working');
+    if (running.length === 0) return '';
+    // Use first subagent's parent_session_id as section key, fallback to combined IDs
+    const sectionKey = running[0]?.parent_session_id || running.map(a => a.id).join(',');
+    const sectionOpen = this._expandedSubagentSections.has(sectionKey);
+    const rows = running.map(a => {
+      const type = a.agent_type || 'agent';
+      const desc = a.task_description ? this._escapeHTML(a.task_description.substring(0, 100)) : '';
+      const duration = this._duration(a.started_at);
+      const transcriptOpen = this._expandedSubagentTranscripts.has(a.id);
+      return `<div class="subagent-item">
+        <div class="subagent-row" onclick="event.stopPropagation(); Dashboard.toggleSubagentTranscript('${this._escapeHTML(a.id)}', this)">
+          <span class="status-dot working small"></span>
+          <span class="subagent-type">${this._escapeHTML(type)}</span>
+          ${desc ? `<span class="subagent-desc">${desc}</span>` : ''}
+          <span class="subagent-duration">${duration}</span>
+          <span class="subagent-expand preview-chevron" ${transcriptOpen ? 'style="transform:rotate(90deg)"' : ''}>&#9656;</span>
+        </div>
+        <div class="subagent-transcript" id="subagent-transcript-${a.id}" style="display:${transcriptOpen ? 'block' : 'none'}"></div>
+      </div>`;
+    }).join('');
+    return `<div class="card-subagents" data-section-key="${this._escapeHTML(sectionKey)}">
+      <div class="subagents-header" onclick="event.stopPropagation(); Dashboard.toggleSubagents(this)">
+        <span class="preview-chevron" ${sectionOpen ? 'style="transform:rotate(90deg)"' : ''}>&#9656;</span>
+        <span>${running.length} subagent${running.length !== 1 ? 's' : ''} running</span>
+      </div>
+      <div class="subagents-list" style="display:${sectionOpen ? 'block' : 'none'}">${rows}</div>
+    </div>`;
+  },
+
+  toggleSubagents(headerEl) {
+    const list = headerEl.nextElementSibling;
+    const chevron = headerEl.querySelector('.preview-chevron');
+    const sectionKey = headerEl.closest('.card-subagents')?.dataset.sectionKey;
+    if (!list) return;
+    const isOpen = list.style.display !== 'none';
+    list.style.display = isOpen ? 'none' : 'block';
+    if (chevron) chevron.style.transform = isOpen ? '' : 'rotate(90deg)';
+    if (sectionKey) {
+      if (isOpen) this._expandedSubagentSections.delete(sectionKey);
+      else this._expandedSubagentSections.add(sectionKey);
+    }
+  },
+
+  async toggleSubagentTranscript(agentId, rowEl) {
+    const container = document.getElementById(`subagent-transcript-${agentId}`);
+    if (!container) return;
+    const chevron = rowEl.querySelector('.subagent-expand');
+    const isOpen = container.style.display !== 'none';
+
+    if (isOpen) {
+      container.style.display = 'none';
+      if (chevron) chevron.style.transform = '';
+      this._expandedSubagentTranscripts.delete(agentId);
+      return;
+    }
+
+    this._expandedSubagentTranscripts.add(agentId);
+    this._loadSubagentTranscript(agentId, container);
+    container.style.display = 'block';
+    if (chevron) chevron.style.transform = 'rotate(90deg)';
+  },
+
+  async _loadSubagentTranscript(agentId, container) {
+    container.innerHTML = '<div class="subagent-loading">Loading...</div>';
+    try {
+      const resp = await fetch(`/api/sessions/${agentId}/transcript?limit=20`);
+      const data = await resp.json();
+      const msgs = data.transcripts || [];
+      if (msgs.length === 0) {
+        container.innerHTML = '<div class="subagent-loading">No transcript available</div>';
+        return;
+      }
+      container.innerHTML = msgs.map(t => {
+        const roleLabel = t.role === 'user' ? 'U' : t.role === 'assistant' ? 'A' : 'T';
+        const text = (t.content || '').substring(0, 300);
+        return `<div class="preview-msg"><span class="preview-role ${t.role}">${roleLabel}</span> ${this._escapeHTML(text)}</div>`;
+      }).join('');
+    } catch (e) {
+      container.innerHTML = '<div class="subagent-loading">Failed to load transcript</div>';
+    }
   },
 };

@@ -21,6 +21,17 @@ source .venv/bin/activate
 pytest
 ```
 
+## Before Committing
+Always run linting, formatting, type checking, and tests before creating commits:
+```bash
+source .venv/bin/activate
+ruff check .
+ruff format .
+mypy server/
+pytest
+```
+Or use `make check` which runs all of them.
+
 ## Project Structure
 - `server/` — FastAPI backend
 - `public/` — Static frontend files

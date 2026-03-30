@@ -142,7 +142,42 @@ async def process_hook_event(event_data: dict) -> dict | None:
                 base_updates["context_usage_percent"] = (event_data["context_tokens"] / max_ctx) * 100
         session = await db.update_session(session_id, **base_updates)
 
-    elif event_type == "SubagentStart" or event_type == "SubagentStop":
+    elif event_type == "SubagentStart":
+        # The session_id in the event is the PARENT session ID
+        # The agent_id is the subagent's own ID
+        agent_id = event_data.get("agent_id", "")
+        agent_type = event_data.get("agent_type", "")
+        if agent_id:
+            # Create or update the subagent session, linked to parent
+            subagent = await db.get_session(agent_id)
+            if subagent is None:
+                subagent = await db.create_session(
+                    agent_id,
+                    project_path=project_path,
+                )
+            await db.update_session(
+                agent_id,
+                parent_session_id=session_id,
+                agent_type=agent_type,
+                status="working",
+                last_activity_at=now,
+            )
+        # Also update the parent session's last_activity_at
+        session = await db.update_session(session_id, **base_updates)
+
+    elif event_type == "SubagentStop":
+        agent_id = event_data.get("agent_id", "")
+        if agent_id:
+            subagent_updates = {
+                "status": "completed",
+                "ended_at": now,
+                "last_activity_at": now,
+            }
+            last_msg = event_data.get("last_assistant_message", "")
+            if last_msg:
+                subagent_updates["task_description"] = last_msg[:200]
+            await db.update_session(agent_id, **subagent_updates)
+        # Also update the parent session's last_activity_at
         session = await db.update_session(session_id, **base_updates)
 
     elif event_type == "Notification":
@@ -161,7 +196,16 @@ async def process_hook_event(event_data: dict) -> dict | None:
         session = await db.update_session(session_id, **base_updates)
 
     if session:
-        await _notify_update(session)
+        # If this is a subagent event, also notify about the parent session
+        # so the frontend can update the nested subagent display
+        if event_type in ("SubagentStart", "SubagentStop"):
+            parent = await db.get_session(session_id)
+            if parent:
+                subagents = await db.get_subagents_for_session(session_id)
+                parent["subagents"] = subagents
+                await _notify_update(parent)
+        else:
+            await _notify_update(session)
 
     return session
 
