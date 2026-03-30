@@ -1,15 +1,12 @@
-"""Tests for WebSocket handlers and helpers."""
+"""Tests for WebSocket handlers."""
 
 import json
-import os
-from unittest.mock import AsyncMock, patch
+from unittest.mock import AsyncMock
 
 import pytest
 
 from server.routes.ws import (
     _dashboard_clients,
-    _read_pty_safe,
-    _write_pty_safe,
     broadcast_session_update,
 )
 
@@ -60,49 +57,6 @@ async def test_broadcast_removes_disconnected():
     assert ws_good in _dashboard_clients
 
 
-# --- PTY helpers ---
-
-
-def test_read_pty_safe_with_data():
-    """_read_pty_safe returns data when available using real pipe."""
-    r, w = os.pipe()
-    os.write(w, b"hello")
-    result = _read_pty_safe(r)
-    assert result == b"hello"
-    os.close(r)
-    os.close(w)
-
-
-def test_read_pty_safe_no_data():
-    """_read_pty_safe returns None when no data available."""
-    r, w = os.pipe()
-    result = _read_pty_safe(r)
-    assert result is None
-    os.close(r)
-    os.close(w)
-
-
-def test_read_pty_safe_os_error():
-    """_read_pty_safe returns None on bad fd."""
-    result = _read_pty_safe(99999)
-    assert result is None
-
-
-def test_write_pty_safe_success():
-    """_write_pty_safe writes data."""
-    r, w = os.pipe()
-    _write_pty_safe(w, b"hello")
-    data = os.read(r, 100)
-    assert data == b"hello"
-    os.close(r)
-    os.close(w)
-
-
-def test_write_pty_safe_os_error():
-    """_write_pty_safe silently handles bad fd."""
-    _write_pty_safe(99999, b"hello")  # Should not raise
-
-
 # --- WebSocket endpoints (via test client) ---
 
 
@@ -130,152 +84,6 @@ async def test_dashboard_ws_lifecycle():
         ws.send_text("ping")
         pong = ws.receive_json()
         assert pong["type"] == "pong"
-
-    await db.close_db()
-
-
-async def test_terminal_ws_no_session():
-    """Test terminal WebSocket when no terminal session exists."""
-    from fastapi import FastAPI
-    from starlette.testclient import TestClient
-
-    import server.db as db
-    from server.routes.ws import router
-
-    await db.init_db(":memory:")
-
-    app = FastAPI()
-    app.include_router(router)
-
-    with patch("server.terminal.attach_session", new_callable=AsyncMock, return_value=None):
-        with TestClient(app) as client:
-            with client.websocket_connect("/ws/terminal/nonexistent") as ws:
-                data = ws.receive_json()
-                assert data["type"] == "error"
-                assert "No terminal found" in data["message"]
-
-    await db.close_db()
-
-
-async def test_terminal_ws_with_session():
-    """Test terminal WebSocket with a mock PTY."""
-    from fastapi import FastAPI
-    from starlette.testclient import TestClient
-
-    import server.db as db
-    from server.routes.ws import router
-
-    await db.init_db(":memory:")
-
-    app = FastAPI()
-    app.include_router(router)
-
-    r_fd, w_fd = os.pipe()
-
-    with patch("server.terminal.attach_session", new_callable=AsyncMock, return_value=r_fd):
-        with patch("server.terminal.detach_session", new_callable=AsyncMock):
-            with TestClient(app) as client:
-                with client.websocket_connect("/ws/terminal/test-sess") as ws:
-                    # Send a ping
-                    ws.send_text("ping")
-                    pong = ws.receive_json()
-                    assert pong["type"] == "pong"
-
-    os.close(w_fd)
-    try:
-        os.close(r_fd)
-    except OSError:
-        pass
-    await db.close_db()
-
-
-async def test_terminal_ws_send_text():
-    """Test terminal WebSocket receiving text data and writing to PTY."""
-    from fastapi import FastAPI
-    from starlette.testclient import TestClient
-
-    import server.db as db
-    from server.routes.ws import router
-
-    await db.init_db(":memory:")
-
-    app = FastAPI()
-    app.include_router(router)
-
-    r_fd, w_fd = os.pipe()
-
-    with patch("server.terminal.attach_session", new_callable=AsyncMock, return_value=w_fd):
-        with patch("server.terminal.detach_session", new_callable=AsyncMock):
-            with TestClient(app) as client:
-                with client.websocket_connect("/ws/terminal/text-sess") as ws:
-                    # Send text data
-                    ws.send_text("hello world")
-                    # Send ping
-                    ws.send_text("ping")
-                    pong = ws.receive_json()
-                    assert pong["type"] == "pong"
-
-    # Read what was written
-    try:
-        data = os.read(r_fd, 100)
-        assert b"hello world" in data
-    except OSError:
-        pass
-    for fd in (r_fd, w_fd):
-        try:
-            os.close(fd)
-        except OSError:
-            pass
-    await db.close_db()
-
-
-async def test_terminal_ws_send_bytes():
-    """Test terminal WebSocket receiving binary data."""
-    from fastapi import FastAPI
-    from starlette.testclient import TestClient
-
-    import server.db as db
-    from server.routes.ws import router
-
-    await db.init_db(":memory:")
-
-    app = FastAPI()
-    app.include_router(router)
-
-    r_fd, w_fd = os.pipe()
-
-    with patch("server.terminal.attach_session", new_callable=AsyncMock, return_value=w_fd):
-        with patch("server.terminal.detach_session", new_callable=AsyncMock):
-            with TestClient(app) as client:
-                with client.websocket_connect("/ws/terminal/bytes-sess") as ws:
-                    ws.send_bytes(b"\x1b[A")  # Up arrow escape sequence
-
-    for fd in (r_fd, w_fd):
-        try:
-            os.close(fd)
-        except OSError:
-            pass
-    await db.close_db()
-
-
-async def test_terminal_ws_exception_handling():
-    """Test terminal WebSocket error path."""
-    from fastapi import FastAPI
-    from starlette.testclient import TestClient
-
-    import server.db as db
-    from server.routes.ws import router
-
-    await db.init_db(":memory:")
-
-    app = FastAPI()
-    app.include_router(router)
-
-    with patch("server.terminal.attach_session", new_callable=AsyncMock, side_effect=Exception("attach failed")):
-        with TestClient(app) as client:
-            with client.websocket_connect("/ws/terminal/err-sess") as ws:
-                data = ws.receive_json()
-                assert data["type"] == "error"
 
     await db.close_db()
 

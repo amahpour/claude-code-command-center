@@ -100,6 +100,18 @@ def test_hook_creates_session_card(page):
 
     assert "e2e-project" in page.text_content("#session-grid")
 
+    # Clean up: end the session so it doesn't linger on the dashboard
+    page.evaluate("""() => {
+        return fetch('/api/hooks', {
+            method: 'POST',
+            headers: {'Content-Type': 'application/json'},
+            body: JSON.stringify({
+                event_type: 'SessionEnd',
+                session_id: 'e2e-1'
+            })
+        }).then(r => r.json());
+    }""")
+
 
 def test_history_page(page):
     page.goto(SERVER_URL)
@@ -120,7 +132,7 @@ def test_analytics_page(page):
     assert page.is_visible("#chart-tokens")
 
 
-def test_session_card_opens_terminal(page):
+def test_session_card_opens_transcript(page):
     page.goto(SERVER_URL)
     page.wait_for_timeout(500)
 

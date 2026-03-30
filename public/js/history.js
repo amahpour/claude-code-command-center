@@ -42,13 +42,12 @@ const History = {
         <div class="pagination" id="history-pagination"></div>
       </div>
       <div id="transcript-view" style="display:none">
-        <div class="transcript-container">
-          <div class="transcript-header">
-            <button class="btn btn-sm" id="transcript-back">&larr; Back to History</button>
-            <h2 id="transcript-title"></h2>
-          </div>
-          <div id="transcript-messages"></div>
-          <div class="pagination" id="transcript-pagination"></div>
+        <div class="transcript-header">
+          <button class="btn btn-sm" id="transcript-back">&larr; Back to History</button>
+          <h2 id="transcript-title"></h2>
+        </div>
+        <div class="transcript-live">
+          <div class="transcript-live-messages" id="transcript-messages"></div>
         </div>
       </div>
     `;
@@ -73,9 +72,16 @@ const History = {
     });
 
     document.getElementById('transcript-back').addEventListener('click', () => {
-      document.getElementById('transcript-view').style.display = 'none';
-      document.getElementById('history-content').style.display = 'block';
+      this.closeTranscript();
+      window.history.back();
     });
+  },
+
+  closeTranscript() {
+    const tv = document.getElementById('transcript-view');
+    const hc = document.getElementById('history-content');
+    if (tv) tv.style.display = 'none';
+    if (hc) hc.style.display = 'block';
   },
 
   async fetchSessions() {
@@ -179,13 +185,26 @@ const History = {
     }
   },
 
-  async showTranscript(sessionId, title) {
+  showTranscriptDirect(sessionId, title) {
+    // Open transcript without pushing browser state (used by popstate handler)
+    this._openTranscript(sessionId, title);
+  },
+
+  showTranscript(sessionId, title) {
+    this._openTranscript(sessionId, title);
+    window.history.pushState(
+      { view: 'history', transcript: true, sessionId, sessionTitle: title },
+      '', `#history/${sessionId}`
+    );
+  },
+
+  async _openTranscript(sessionId, title) {
     document.getElementById('history-content').style.display = 'none';
     document.getElementById('transcript-view').style.display = 'block';
     document.getElementById('transcript-title').textContent = title || sessionId;
 
     try {
-      const resp = await fetch(`/api/sessions/${sessionId}/transcript`);
+      const resp = await fetch(`/api/sessions/${sessionId}/transcript?limit=1000`);
       const data = await resp.json();
       this.renderTranscript(data.transcripts);
     } catch (e) {
@@ -202,20 +221,10 @@ const History = {
       return;
     }
 
-    container.innerHTML = transcripts.map(t => {
-      const role = t.role || 'unknown';
-      const isCollapsible = role === 'tool_use' || role === 'tool_result';
-      const time = t.timestamp ? this._formatTime(t.timestamp) : '';
-
-      return `
-        <div class="transcript-message ${role}${isCollapsible ? '' : ''}" ${isCollapsible ? 'onclick="this.classList.toggle(\'expanded\')"' : ''}>
-          <span class="transcript-role">${this._esc(role)}</span>
-          <span class="transcript-time">${time}</span>
-          <button class="transcript-copy" onclick="event.stopPropagation();navigator.clipboard.writeText(this.parentElement.querySelector('.transcript-text').textContent)">Copy</button>
-          <div class="transcript-text">${this._esc(t.content || '')}</div>
-        </div>
-      `;
-    }).join('');
+    // Use the same rich renderer as the live transcript view
+    const planGroups = SessionViewer._detectPlanGroups(transcripts);
+    const agentGroups = SessionViewer._detectAgentGroups(transcripts);
+    container.innerHTML = SessionViewer._renderTranscriptWithGroups(transcripts, planGroups, agentGroups);
   },
 
   _formatDate(dateStr) {

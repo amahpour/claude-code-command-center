@@ -14,7 +14,7 @@ Claude Code fires a hook event (e.g. "I just used the Read tool")
 hook-handler.py receives the event JSON on stdin
         |
         v
-hook-handler.py POSTs it to http://localhost:3000/api/hooks
+hook-handler.py POSTs it to http://localhost:4700/api/hooks
         |
         v
 The server updates the SQLite DB and broadcasts via WebSocket
@@ -54,7 +54,7 @@ Critical design constraint: **it must never block Claude Code.** If the server i
 
 ### 3. The Server (`server/`)
 
-A FastAPI app running on port 3000. It does four things:
+A FastAPI app running on port 4700. It does four things:
 
 | Component | File | What It Does |
 |-----------|------|-------------|

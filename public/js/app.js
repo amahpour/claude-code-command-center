@@ -28,9 +28,15 @@ const App = {
       if (state.view === 'session' && state.sessionId) {
         // Reopen session transcript without pushing another state
         this._openSessionDirect(state.sessionId, state.sessionTitle);
+      } else if (state.view === 'history' && state.transcript && state.sessionId) {
+        // Reopen history transcript without pushing another state
+        if (typeof History !== 'undefined') {
+          History.showTranscriptDirect(state.sessionId, state.sessionTitle);
+        }
       } else {
-        // Close any open transcript and switch view
+        // Close any open transcript/overlay and switch view
         if (typeof SessionViewer !== 'undefined') SessionViewer.close();
+        if (typeof History !== 'undefined') History.closeTranscript();
         this._switchViewDirect(state.view || 'dashboard');
       }
     });
