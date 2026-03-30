@@ -106,7 +106,7 @@ async def _create_tables(db: aiosqlite.Connection):
     """)
 
     # Add columns that may not exist in older databases
-    for col, col_type in [("session_name", "TEXT"), ("effort_level", "TEXT"), ("ticket_id", "TEXT"), ("display_name", "TEXT")]:
+    for col, col_type in [("session_name", "TEXT"), ("effort_level", "TEXT"), ("ticket_id", "TEXT"), ("display_name", "TEXT"), ("display_name_locked", "INTEGER DEFAULT 0"), ("last_activity_preview", "TEXT")]:
         try:
             await db.execute(f"ALTER TABLE sessions ADD COLUMN {col} {col_type}")
         except Exception:

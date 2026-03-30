@@ -254,6 +254,21 @@ async def test_new_session_disabled(client: AsyncClient):
     assert resp.status_code == 501
 
 
+async def test_patch_session_lock(client: AsyncClient):
+    await db.create_session("lock-1", project_path="/tmp/proj")
+    resp = await client.patch("/api/sessions/lock-1", json={"display_name_locked": True})
+    assert resp.status_code == 200
+    assert resp.json()["session"]["display_name_locked"] == 1
+
+
+async def test_patch_session_unlock(client: AsyncClient):
+    await db.create_session("lock-2", project_path="/tmp/proj")
+    await db.update_session("lock-2", display_name_locked=1)
+    resp = await client.patch("/api/sessions/lock-2", json={"display_name_locked": False})
+    assert resp.status_code == 200
+    assert resp.json()["session"]["display_name_locked"] == 0
+
+
 async def test_stop_session_api(client: AsyncClient):
     await db.create_session("stop-1")
     from unittest.mock import patch, AsyncMock

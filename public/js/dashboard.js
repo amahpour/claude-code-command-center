@@ -111,10 +111,24 @@ const Dashboard = {
     const displayTitle = s.display_name || s.project_name || s.id;
     const projectPath = s.project_path ? s.project_path.replace(/^\/Users\/[^/]+\//, '~/') : '';
 
+    const isLocked = s.display_name_locked;
+    const lockIcon = isLocked ? '&#128274;' : '&#128275;';
+    const lockTitle = isLocked ? 'Title locked (click to unlock)' : 'Title auto-updates (click to lock)';
+
+    const previewText = s.last_activity_preview || '';
+    const previewLine = previewText
+      ? `<div class="card-preview" onclick="event.stopPropagation(); Dashboard.togglePreview('${this._escapeHTML(s.id)}', this)">
+          <span class="preview-chevron">&#9656;</span>
+          <span class="preview-text">${this._escapeHTML(previewText)}</span>
+        </div>
+        <div class="card-preview-expanded" id="preview-${s.id}" style="display:none"></div>`
+      : '';
+
     return `
       <div class="card-header">
         <span class="status-dot ${status}"></span>
         <span class="card-project" onclick="event.stopPropagation(); Dashboard.editDisplayName('${this._escapeHTML(s.id)}', '${this._escapeHTML(displayTitle)}')" title="Click to rename">${this._escapeHTML(displayTitle)}</span>
+        <button class="card-lock-btn ${isLocked ? 'locked' : ''}" onclick="event.stopPropagation(); Dashboard.toggleLock('${this._escapeHTML(s.id)}', ${!isLocked})" title="${lockTitle}">${lockIcon}</button>
         <span class="card-status-label ${status}">${status}</span>
       </div>
       ${sessionName}
@@ -123,6 +137,7 @@ const Dashboard = {
         <span class="card-meta-item">${this._escapeHTML(modelShort)}</span>
         ${effortBadge}
       </div>
+      ${previewLine}
       ${s.task_description ? `<div class="card-task">${this._escapeHTML(s.task_description)}</div>` : ''}
       <div class="context-bar">
         <div class="context-bar-label">
@@ -232,6 +247,50 @@ const Dashboard = {
       })
       .catch(e => console.error('Failed to update ticket ID:', e));
     });
+  },
+
+  toggleLock(sessionId, locked) {
+    fetch(`/api/sessions/${sessionId}`, {
+      method: 'PATCH',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ display_name_locked: locked }),
+    })
+    .then(r => r.json())
+    .then(data => {
+      if (data.session) {
+        App.sessions[data.session.id] = data.session;
+        this.updateCard(data.session);
+      }
+    })
+    .catch(e => console.error('Failed to toggle lock:', e));
+  },
+
+  async togglePreview(sessionId, headerEl) {
+    const expanded = document.getElementById(`preview-${sessionId}`);
+    if (!expanded) return;
+    const isOpen = expanded.style.display !== 'none';
+    const chevron = headerEl.querySelector('.preview-chevron');
+
+    if (isOpen) {
+      expanded.style.display = 'none';
+      if (chevron) chevron.style.transform = '';
+      return;
+    }
+
+    try {
+      const resp = await fetch(`/api/sessions/${sessionId}/transcript?limit=3`);
+      const data = await resp.json();
+      const msgs = data.transcripts || [];
+      expanded.innerHTML = msgs.map(t => {
+        const roleLabel = t.role === 'user' ? 'U' : t.role === 'assistant' ? 'A' : 'T';
+        const text = (t.content || '').substring(0, 200);
+        return `<div class="preview-msg"><span class="preview-role ${t.role}">${roleLabel}</span> ${this._escapeHTML(text)}</div>`;
+      }).join('');
+      expanded.style.display = 'block';
+      if (chevron) chevron.style.transform = 'rotate(90deg)';
+    } catch (e) {
+      console.error('Preview fetch failed:', e);
+    }
   },
 
   _escapeHTML(str) {

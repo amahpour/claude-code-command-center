@@ -128,7 +128,7 @@ const SessionViewer = {
 
   async _fetchTranscript(sessionId) {
     try {
-      const resp = await fetch(`/api/sessions/${sessionId}/transcript?limit=200`);
+      const resp = await fetch(`/api/sessions/${sessionId}/transcript?limit=1000`);
       const data = await resp.json();
       const transcripts = data.transcripts || [];
 
