@@ -532,25 +532,15 @@ async def _process_file_changes(file_path: str):
     if preview:
         session_updates["last_activity_preview"] = preview
 
-    # Auto-generate display_name via LLM every 10 user messages (background, non-blocking)
+    # Auto-generate display_name via LLM when missing (background, non-blocking)
     user_entries = [e for e in parsed_entries if e.get("role") == "user"]
     if user_entries:
         session = session or await db.get_session(session_id)
-        if session and not session.get("display_name_locked"):
-            # Count total user messages in this session
-            conn = await db.get_db()
-            cursor = await conn.execute(
-                "SELECT COUNT(*) FROM transcripts WHERE session_id = ? AND role = 'user'",
-                (session_id,),
+        if session and not session.get("display_name_locked") and not session.get("display_name"):
+            latest_user = user_entries[-1].get("content", "") or first_user_message or ""
+            asyncio.create_task(
+                _generate_llm_title(session_id, latest_user, git_branch)
             )
-            total_user = (await cursor.fetchone())[0]
-            # Generate on first message, then every 10th
-            if total_user == len(user_entries) or total_user % 10 < len(user_entries):
-                # Use the latest user message for context
-                latest_user = user_entries[-1].get("content", "") or first_user_message or ""
-                asyncio.create_task(
-                    _generate_llm_title(session_id, latest_user, git_branch)
-                )
 
     if session_updates:
         await db.update_session(session_id, **session_updates)
