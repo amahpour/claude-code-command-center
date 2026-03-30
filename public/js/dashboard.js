@@ -315,11 +315,7 @@ const Dashboard = {
     if (!subagents || subagents.length === 0) return '';
     // Only show actively working subagents in the tile
     const running = subagents.filter(a => a.status === 'working');
-    const doneCount = subagents.length - running.length;
-    if (running.length === 0) {
-      // Nothing in flight — just show a subtle completed count
-      return doneCount > 0 ? `<div class="card-subagents-done">${doneCount} subagent${doneCount !== 1 ? 's' : ''} completed</div>` : '';
-    }
+    if (running.length === 0) return '';
     // Use first subagent's parent_session_id as section key, fallback to combined IDs
     const sectionKey = running[0]?.parent_session_id || running.map(a => a.id).join(',');
     const sectionOpen = this._expandedSubagentSections.has(sectionKey);
@@ -339,11 +335,10 @@ const Dashboard = {
         <div class="subagent-transcript" id="subagent-transcript-${a.id}" style="display:${transcriptOpen ? 'block' : 'none'}"></div>
       </div>`;
     }).join('');
-    const doneLabel = doneCount > 0 ? ` <span class="subagents-done-count">(${doneCount} done)</span>` : '';
     return `<div class="card-subagents" data-section-key="${this._escapeHTML(sectionKey)}">
       <div class="subagents-header" onclick="event.stopPropagation(); Dashboard.toggleSubagents(this)">
         <span class="preview-chevron" ${sectionOpen ? 'style="transform:rotate(90deg)"' : ''}>&#9656;</span>
-        <span>${running.length} subagent${running.length !== 1 ? 's' : ''} running${doneLabel}</span>
+        <span>${running.length} subagent${running.length !== 1 ? 's' : ''} running</span>
       </div>
       <div class="subagents-list" style="display:${sectionOpen ? 'block' : 'none'}">${rows}</div>
     </div>`;
