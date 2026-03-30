@@ -14,8 +14,23 @@ logger = logging.getLogger(__name__)
 
 CLAUDE_PROJECTS_DIR = os.path.expanduser("~/.claude/projects")
 
-# Track last read position per file
+# Track last read position per file (persisted to DB across restarts)
 _file_positions: dict[str, int] = {}
+
+
+async def _load_file_positions():
+    """Restore file positions from DB on startup."""
+    raw = await db.get_setting("file_positions")
+    if raw:
+        try:
+            _file_positions.update(json.loads(raw))
+        except (json.JSONDecodeError, TypeError):
+            pass
+
+
+async def _save_file_positions():
+    """Persist file positions to DB."""
+    await db.set_setting("file_positions", json.dumps(_file_positions))
 
 # Debounce tracking
 _debounce_tasks: dict[str, asyncio.Task] = {}
@@ -517,6 +532,7 @@ async def _debounced_process(file_path: str):
     """Debounce file processing to avoid excessive reads."""
     await asyncio.sleep(DEBOUNCE_SECONDS)
     await _process_file_changes(file_path)
+    await _save_file_positions()
 
 
 def _schedule_process(file_path: str):
@@ -531,6 +547,8 @@ def _schedule_process(file_path: str):
 async def start_watcher():
     """Start watching for JSONL file changes."""
     global _watcher_task
+
+    await _load_file_positions()
 
     projects_dir = CLAUDE_PROJECTS_DIR
     if not os.path.isdir(projects_dir):
