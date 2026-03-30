@@ -333,6 +333,88 @@ body {
 .card-effort.medium, .card-effort.standard { background: rgba(59, 130, 246, 0.12); color: #93c5fd; }
 .card-effort.low { background: rgba(82, 82, 91, 0.12); color: var(--text-dim); }
 
+/* Lock button */
+.card-lock-btn {
+  background: none;
+  border: none;
+  cursor: pointer;
+  font-size: 12px;
+  padding: 2px 4px;
+  opacity: 0.3;
+  transition: opacity var(--transition);
+  flex-shrink: 0;
+}
+.card-lock-btn:hover { opacity: 0.8; }
+.card-lock-btn.locked { opacity: 0.7; color: var(--status-waiting); }
+
+/* Activity preview */
+.card-preview {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 4px 0;
+  margin-bottom: 6px;
+  font-size: 11px;
+  color: var(--text-dim);
+  font-family: var(--font-mono);
+  cursor: pointer;
+  overflow: hidden;
+}
+.card-preview:hover { color: var(--text-secondary); }
+
+.preview-chevron {
+  font-size: 10px;
+  color: var(--text-faint);
+  transition: transform 0.15s ease;
+  flex-shrink: 0;
+}
+
+.preview-text {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  flex: 1;
+}
+
+.card-preview-expanded {
+  margin-bottom: 8px;
+  padding: 6px 8px;
+  background: var(--surface-2);
+  border-radius: var(--radius);
+  border-left: 2px solid var(--accent);
+  font-size: 11px;
+  max-height: 200px;
+  overflow-y: auto;
+}
+
+.preview-msg {
+  padding: 3px 0;
+  color: var(--text-secondary);
+  line-height: 1.4;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.preview-msg + .preview-msg {
+  border-top: 1px solid var(--border);
+}
+
+.preview-role {
+  display: inline-block;
+  width: 16px;
+  height: 16px;
+  line-height: 16px;
+  text-align: center;
+  border-radius: 3px;
+  font-size: 9px;
+  font-weight: 700;
+  margin-right: 4px;
+}
+.preview-role.user { background: rgba(59, 130, 246, 0.15); color: #93c5fd; }
+.preview-role.assistant { background: rgba(124, 58, 237, 0.15); color: #c4b5fd; }
+.preview-role.tool_result { background: rgba(245, 158, 11, 0.15); color: #fcd34d; }
+
 .card-task {
   font-size: 12px;
   color: var(--text-secondary);

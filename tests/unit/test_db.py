@@ -211,3 +211,19 @@ async def test_init_db_with_file_path():
         await db.close_db()
     # Re-init for cleanup
     await db.init_db(":memory:")
+
+
+async def test_display_name_locked_column():
+    """display_name_locked column should exist and default to 0."""
+    session = await db.create_session("lock-col-1")
+    assert session["display_name_locked"] == 0
+    updated = await db.update_session("lock-col-1", display_name_locked=1)
+    assert updated["display_name_locked"] == 1
+
+
+async def test_last_activity_preview_column():
+    """last_activity_preview column should exist and default to None."""
+    session = await db.create_session("preview-col-1")
+    assert session.get("last_activity_preview") is None
+    updated = await db.update_session("preview-col-1", last_activity_preview="Editing file.py")
+    assert updated["last_activity_preview"] == "Editing file.py"

@@ -124,7 +124,9 @@ def test_session_card_opens_terminal(page):
 
     card = page.query_selector(".session-card")
     if card:
-        card.click()
+        # Click the context bar area — avoids interactive elements that stop propagation
+        ctx = card.query_selector(".context-bar")
+        (ctx or card).click()
         page.wait_for_timeout(500)
         assert page.is_visible("#terminal-overlay")
 

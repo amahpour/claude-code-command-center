@@ -13,6 +13,8 @@ from server.watcher import (
     _file_positions,
     _extract_content,
     _session_id_from_path,
+    _generate_auto_title,
+    _extract_activity_preview,
 )
 
 
@@ -720,6 +722,166 @@ async def test_process_file_no_session_id():
     """Test processing a non-JSONL file path."""
     await _process_file_changes("/tmp/not-a-jsonl.txt")
     # Should return early, no error
+
+
+# --- _generate_auto_title ---
+
+
+def test_generate_auto_title_short():
+    """Input with <= 5 words returns as-is."""
+    assert _generate_auto_title("Fix auth bug") == "Fix auth bug"
+
+
+def test_generate_auto_title_long():
+    """Input with > 5 words truncates to 5 + ellipsis."""
+    result = _generate_auto_title("Fix the authentication bug in the login module")
+    assert result == "Fix the authentication bug in..."
+
+
+def test_generate_auto_title_empty():
+    assert _generate_auto_title("") is None
+    assert _generate_auto_title(None) is None
+
+
+def test_generate_auto_title_tiny():
+    """Input <= 5 chars returns None."""
+    assert _generate_auto_title("Hi") is None
+    assert _generate_auto_title("   ab") is None
+
+
+def test_generate_auto_title_exactly_five_words():
+    assert _generate_auto_title("Add dark mode to app") == "Add dark mode to app"
+
+
+# --- _extract_activity_preview ---
+
+
+def test_extract_activity_preview_tool_call():
+    """Entry with [Tool: Edit] returns 'Editing: ...'."""
+    entries = [{"role": "assistant", "content": "[Tool: Edit]\n/home/user/project/server/watcher.py\n--- old\n+++ new"}]
+    result = _extract_activity_preview(entries)
+    assert result is not None
+    assert "Editing" in result
+    assert "watcher.py" in result
+
+
+def test_extract_activity_preview_bash():
+    """Entry with [Tool: Bash] returns 'Running: ...'."""
+    entries = [{"role": "assistant", "content": "[Tool: Bash]\n$ pytest tests/"}]
+    result = _extract_activity_preview(entries)
+    assert result is not None
+    assert "Running" in result
+    assert "pytest" in result
+
+
+def test_extract_activity_preview_read():
+    entries = [{"role": "assistant", "content": "[Tool: Read]\n/tmp/file.py"}]
+    result = _extract_activity_preview(entries)
+    assert result is not None
+    assert "Reading" in result
+
+
+def test_extract_activity_preview_text_only():
+    """Assistant text returns first sentence."""
+    entries = [{"role": "assistant", "content": "I'll look into the authentication module. Let me read the file."}]
+    result = _extract_activity_preview(entries)
+    assert result is not None
+    assert "authentication module" in result
+
+
+def test_extract_activity_preview_empty():
+    assert _extract_activity_preview([]) is None
+
+
+def test_extract_activity_preview_uses_latest():
+    """Should use the most recent entry."""
+    entries = [
+        {"role": "assistant", "content": "Old message"},
+        {"role": "assistant", "content": "[Tool: Edit]\n/tmp/new.py\n--- old\n+++ new"},
+    ]
+    result = _extract_activity_preview(entries)
+    assert "Editing" in result
+
+
+# --- Auto-title + preview in _process_file_changes ---
+
+
+async def test_process_file_auto_title_set():
+    """Auto-title should be set from first user message."""
+    with tempfile.NamedTemporaryFile(
+        mode="w", suffix=".jsonl", delete=False, dir=tempfile.gettempdir()
+    ) as f:
+        f.write(json.dumps({
+            "type": "user",
+            "message": {"role": "user", "content": "Fix the authentication bug in the login module"},
+            "timestamp": "2026-03-29T10:00:00Z",
+        }) + "\n")
+        tmp_path = f.name
+
+    try:
+        with patch("server.routes.ws.broadcast_session_update", new_callable=AsyncMock):
+            await _process_file_changes(tmp_path)
+        session_id = os.path.splitext(os.path.basename(tmp_path))[0]
+        session = await db.get_session(session_id)
+        assert session["display_name"] == "Fix the authentication bug in..."
+    finally:
+        os.unlink(tmp_path)
+
+
+async def test_process_file_auto_title_locked_not_overwritten():
+    """Locked sessions should not have their display_name overwritten."""
+    with tempfile.NamedTemporaryFile(
+        mode="w", suffix=".jsonl", delete=False, dir=tempfile.gettempdir()
+    ) as f:
+        f.write(json.dumps({
+            "type": "user",
+            "message": {"role": "user", "content": "Fix the authentication bug in the login module"},
+        }) + "\n")
+        tmp_path = f.name
+
+    try:
+        session_id = os.path.splitext(os.path.basename(tmp_path))[0]
+        await db.create_session(session_id)
+        await db.update_session(session_id, display_name="My custom title", display_name_locked=1)
+
+        with patch("server.routes.ws.broadcast_session_update", new_callable=AsyncMock):
+            await _process_file_changes(tmp_path)
+        session = await db.get_session(session_id)
+        assert session["display_name"] == "My custom title"
+    finally:
+        os.unlink(tmp_path)
+
+
+async def test_process_file_preview_updated():
+    """Preview should be set from tool call entries."""
+    with tempfile.NamedTemporaryFile(
+        mode="w", suffix=".jsonl", delete=False, dir=tempfile.gettempdir()
+    ) as f:
+        f.write(json.dumps({
+            "type": "user",
+            "message": {"role": "user", "content": "Fix the bug"},
+        }) + "\n")
+        f.write(json.dumps({
+            "type": "assistant",
+            "message": {
+                "role": "assistant",
+                "content": [
+                    {"type": "text", "text": "Let me edit the file."},
+                    {"type": "tool_use", "name": "Edit", "input": {"file_path": "/tmp/server/watcher.py", "old_string": "old", "new_string": "new"}},
+                ],
+            },
+        }) + "\n")
+        tmp_path = f.name
+
+    try:
+        with patch("server.routes.ws.broadcast_session_update", new_callable=AsyncMock):
+            await _process_file_changes(tmp_path)
+        session_id = os.path.splitext(os.path.basename(tmp_path))[0]
+        session = await db.get_session(session_id)
+        assert session["last_activity_preview"] is not None
+        assert "Editing" in session["last_activity_preview"]
+    finally:
+        os.unlink(tmp_path)
 
 
 # --- _schedule_process / stop_watcher ---

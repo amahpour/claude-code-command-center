@@ -48,6 +48,7 @@ class SessionPatch(BaseModel):
     model_config = {"extra": "forbid"}
     ticket_id: str | None = _UNSET
     display_name: str | None = _UNSET
+    display_name_locked: bool | None = _UNSET
 
 
 @router.get("/health")
@@ -161,6 +162,8 @@ async def patch_session(session_id: str, req: SessionPatch):
         updates["ticket_id"] = req.ticket_id or None
     if req.display_name is not _UNSET:
         updates["display_name"] = req.display_name or None
+    if req.display_name_locked is not _UNSET:
+        updates["display_name_locked"] = 1 if req.display_name_locked else 0
     if not updates:
         return {"session": session}
     updated = await db.update_session(session_id, **updates)

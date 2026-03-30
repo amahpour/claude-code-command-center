@@ -250,6 +250,65 @@ def _infer_context_max(model: str | None) -> int:
     return 200000
 
 
+def _generate_auto_title(task_description: str) -> str | None:
+    """Generate a short auto-title by truncating the task description to ~5 words."""
+    if not task_description or len(task_description.strip()) < 6:
+        return None
+    words = task_description.strip().split()
+    if len(words) <= 5:
+        return task_description.strip()
+    return " ".join(words[:5]) + "..."
+
+
+_TOOL_VERBS = {
+    "edit": "Editing",
+    "write": "Writing",
+    "read": "Reading",
+    "bash": "Running",
+    "grep": "Searching",
+    "glob": "Searching",
+    "agent": "Running agent",
+}
+
+
+def _extract_activity_preview(entries: list[dict]) -> str | None:
+    """Derive a single-line activity preview from the most recent parsed entries.
+
+    Priority: tool call > assistant text > None.
+    """
+    for entry in reversed(entries):
+        content = entry.get("content", "") or ""
+
+        # Check for tool calls: [Tool: Name]\nsummary
+        if "[Tool: " in content:
+            # Extract the last tool call in the content
+            tool_matches = re.findall(r"\[Tool: (\w+)\]\n?(.*?)(?=\[Tool: |\Z)", content, re.DOTALL)
+            if tool_matches:
+                name, summary = tool_matches[-1]
+                verb = _TOOL_VERBS.get(name.lower(), f"Using {name}")
+                # Extract file path or command from summary
+                first_line = summary.strip().split("\n")[0].strip() if summary.strip() else ""
+                if first_line:
+                    # Shorten file paths
+                    if "/" in first_line:
+                        parts = first_line.split("/")
+                        first_line = "/".join(parts[-2:]) if len(parts) > 2 else first_line
+                    # For Bash, strip the $ prefix
+                    if name.lower() == "bash" and first_line.startswith("$ "):
+                        first_line = first_line[2:]
+                    return f"{verb}: {first_line}"[:100]
+                return verb
+
+        # Plain assistant text — take first sentence
+        if entry.get("role") == "assistant" and content and "[Tool: " not in content:
+            # First sentence or first 80 chars
+            sentence = re.split(r'[.!?\n]', content)[0].strip()
+            if sentence:
+                return sentence[:80] + ("..." if len(sentence) > 80 else "")
+
+    return None
+
+
 def _session_id_from_path(file_path: str) -> str | None:
     """Extract a session identifier from a JSONL file path."""
     p = Path(file_path)
@@ -315,6 +374,7 @@ async def _process_file_changes(file_path: str):
     slug = None
     effort_level = None
     first_user_message = None
+    parsed_entries = []
 
     for line in new_lines:
         line = line.strip()
@@ -346,6 +406,8 @@ async def _process_file_changes(file_path: str):
             latest_input = entry["usage"]["input_tokens"]
             latest_output = entry["usage"]["output_tokens"]
             latest_cache = entry["usage"]["cache_tokens"]
+
+        parsed_entries.append(entry)
 
         await db.add_transcript(
             session_id=session_id,
@@ -405,8 +467,29 @@ async def _process_file_changes(file_path: str):
         session_updates["context_max"] = max_ctx
         session_updates["context_usage_percent"] = min((context_tokens / max_ctx) * 100, 100)
 
+    # Activity preview from latest entries
+    preview = _extract_activity_preview(parsed_entries)
+    if preview:
+        session_updates["last_activity_preview"] = preview
+
+    # Auto-generate display_name if not locked
+    if first_user_message:
+        session = session or await db.get_session(session_id)
+        if session and not session.get("display_name_locked"):
+            auto_title = _generate_auto_title(first_user_message)
+            if auto_title:
+                session_updates["display_name"] = auto_title
+
     if session_updates:
         await db.update_session(session_id, **session_updates)
+        # Broadcast to dashboard clients
+        try:
+            from server.routes.ws import broadcast_session_update
+            updated = await db.get_session(session_id)
+            if updated:
+                await broadcast_session_update(updated)
+        except Exception:
+            pass  # Non-critical
 
 
 async def _debounced_process(file_path: str):
