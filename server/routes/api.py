@@ -13,6 +13,7 @@ router = APIRouter(prefix="/api")
 
 class HookEvent(BaseModel):
     """Incoming hook event from hook-handler.py."""
+
     model_config = {"extra": "allow", "populate_by_name": True}
 
     event_type: str | None = None
@@ -46,9 +47,9 @@ _UNSET = object()
 
 class SessionPatch(BaseModel):
     model_config = {"extra": "forbid"}
-    ticket_id: str | None = _UNSET
-    display_name: str | None = _UNSET
-    display_name_locked: bool | None = _UNSET
+    ticket_id: str | None = _UNSET  # type: ignore[assignment]
+    display_name: str | None = _UNSET  # type: ignore[assignment]
+    display_name_locked: bool | None = _UNSET  # type: ignore[assignment]
 
 
 @router.get("/health")
@@ -163,11 +164,12 @@ async def patch_session(session_id: str, req: SessionPatch):
     if req.display_name is not _UNSET:
         updates["display_name"] = req.display_name or None
     if req.display_name_locked is not _UNSET:
-        updates["display_name_locked"] = 1 if req.display_name_locked else 0
+        updates["display_name_locked"] = 1 if req.display_name_locked else 0  # type: ignore[assignment]
     if not updates:
         return {"session": session}
     updated = await db.update_session(session_id, **updates)
     from server.routes.ws import broadcast_session_update
+
     if updated:
         await broadcast_session_update(updated)
     return {"session": updated}
@@ -177,6 +179,7 @@ async def patch_session(session_id: str, req: SessionPatch):
 async def browse_directory(path: str = Query("~")):
     """List directories for the folder picker."""
     import os
+
     resolved = os.path.expanduser(path)
     if not os.path.isdir(resolved):
         raise HTTPException(status_code=400, detail="Not a directory")
@@ -189,8 +192,8 @@ async def browse_directory(path: str = Query("~")):
             if os.path.isdir(full):
                 entries.append({"name": name, "path": full, "type": "dir"})
         return {"path": resolved, "entries": entries}
-    except PermissionError:
-        raise HTTPException(status_code=403, detail="Permission denied")
+    except PermissionError as e:
+        raise HTTPException(status_code=403, detail="Permission denied") from e
 
 
 @router.post("/sessions/new")
@@ -198,7 +201,7 @@ async def new_session(req: NewSessionRequest):
     """Launch a new Claude Code session (disabled — see GitHub issue)."""
     raise HTTPException(
         status_code=501,
-        detail="New Session launching is temporarily disabled. Start Claude Code from your terminal instead — it will appear on the dashboard automatically via hooks."
+        detail="New Session launching is temporarily disabled. Start Claude Code from your terminal instead — it will appear on the dashboard automatically via hooks.",
     )
 
 
@@ -209,9 +212,10 @@ async def stop_session(session_id: str):
     if not session:
         raise HTTPException(status_code=404, detail="Session not found")
     from server.terminal import stop_session as terminal_stop
+
     try:
         await terminal_stop(session_id)
         await db.update_session(session_id, status="completed")
         return {"status": "ok"}
     except Exception as e:
-        raise HTTPException(status_code=500, detail=str(e))
+        raise HTTPException(status_code=500, detail=str(e)) from e

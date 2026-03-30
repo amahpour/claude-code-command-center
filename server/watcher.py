@@ -32,6 +32,7 @@ async def _save_file_positions():
     """Persist file positions to DB."""
     await db.set_setting("file_positions", json.dumps(_file_positions))
 
+
 # Debounce tracking
 _debounce_tasks: dict[str, asyncio.Task] = {}
 DEBOUNCE_SECONDS = 1.0
@@ -93,8 +94,9 @@ def _parse_jsonl_entry(line: str) -> dict | None:
         if not content:
             content = data.get("content", "")
         # Skip system XML tags
-        if isinstance(content, str) and (content.startswith("<command-") or
-                content.startswith("<local-command") or content.startswith("<system-")):
+        if isinstance(content, str) and (
+            content.startswith("<command-") or content.startswith("<local-command") or content.startswith("<system-")
+        ):
             return None
         # Handle tool results embedded in user entries
         tool_result = data.get("toolUseResult")
@@ -243,9 +245,8 @@ def _extract_content(content) -> str | None:
                     parts.append(f"[Result] {text}")
         return "\n".join(parts) if parts else None
 
-    if isinstance(content, dict):
-        if content.get("type") == "text":
-            return content.get("text")
+    if isinstance(content, dict) and content.get("type") == "text":
+        return content.get("text")
 
     return str(content) if content else None
 
@@ -277,10 +278,10 @@ def _generate_auto_title(task_description: str, git_branch: str | None = None) -
         branch = git_branch
         for prefix in ("feature/", "feat/", "fix/", "bugfix/", "hotfix/", "chore/", "refactor/"):
             if branch.lower().startswith(prefix):
-                branch = branch[len(prefix):]
+                branch = branch[len(prefix) :]
                 break
         # Strip ticket IDs (e.g., "PROJ-42-" or "CIT-357-")
-        branch = re.sub(r'^[A-Z]+-\d+-', '', branch)
+        branch = re.sub(r"^[A-Z]+-\d+-", "", branch)
         if branch:
             # Convert kebab-case to title case
             words = branch.replace("-", " ").replace("_", " ").split()
@@ -338,7 +339,7 @@ def _extract_activity_preview(entries: list[dict]) -> str | None:
         # Plain assistant text — take first sentence
         if entry.get("role") == "assistant" and content and "[Tool: " not in content:
             # First sentence or first 80 chars
-            sentence = re.split(r'[.!?\n]', content)[0].strip()
+            sentence = re.split(r"[.!?\n]", content)[0].strip()
             if sentence:
                 return sentence[:80] + ("..." if len(sentence) > 80 else "")
 
@@ -384,7 +385,7 @@ async def _process_file_changes(file_path: str):
     last_pos = _file_positions.get(file_path, 0)
 
     try:
-        with open(file_path, "r", encoding="utf-8", errors="replace") as f:
+        with open(file_path, encoding="utf-8", errors="replace") as f:
             f.seek(last_pos)
             new_lines = f.readlines()
             _file_positions[file_path] = f.tell()
@@ -434,8 +435,7 @@ async def _process_file_changes(file_path: str):
         if entry["role"] == "user" and first_user_message is None and entry["content"]:
             # Skip command/meta/system messages as task descriptions
             c = entry["content"]
-            if (not c.startswith("<") and not c.startswith("{") and not c.startswith("[")
-                    and len(c) > 5):
+            if not c.startswith("<") and not c.startswith("{") and not c.startswith("[") and len(c) > 5:
                 first_user_message = c[:200]
         # Use latest usage snapshot (each assistant message reports current context size)
         if entry.get("usage"):
@@ -521,6 +521,7 @@ async def _process_file_changes(file_path: str):
         # Broadcast to dashboard clients
         try:
             from server.routes.ws import broadcast_session_update
+
             updated = await db.get_session(session_id)
             if updated:
                 await broadcast_session_update(updated)
@@ -556,7 +557,7 @@ async def start_watcher():
         return
 
     try:
-        from watchfiles import awatch, Change
+        from watchfiles import Change, awatch
 
         async def _watch():
             try:

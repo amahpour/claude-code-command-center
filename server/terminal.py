@@ -39,25 +39,19 @@ async def launch_session(project_dir: str, initial_prompt: str | None = None) ->
     claude_cmd = f"cd '{project_dir}' && claude"
 
     loop = asyncio.get_event_loop()
-    await loop.run_in_executor(None, lambda: _run_tmux(
-        "new-session", "-d", "-s", tmux_name, "-x", "200", "-y", "50",
-        claude_cmd
-    ))
+    await loop.run_in_executor(
+        None, lambda: _run_tmux("new-session", "-d", "-s", tmux_name, "-x", "200", "-y", "50", claude_cmd)
+    )
 
     # Accept the trust dialog (sends Enter to confirm "Yes, I trust this folder")
     await asyncio.sleep(2)
-    await loop.run_in_executor(None, lambda: _run_tmux(
-        "send-keys", "-t", tmux_name, "Enter", check=False
-    ))
+    await loop.run_in_executor(None, lambda: _run_tmux("send-keys", "-t", tmux_name, "Enter", check=False))
 
     # Wait for Claude to start, then send the prompt if provided
     if initial_prompt:
         await asyncio.sleep(3)
         escaped = initial_prompt.replace("'", "'\\''")
-        await loop.run_in_executor(None, lambda: _run_tmux(
-            "send-keys", "-t", tmux_name, escaped, "Enter",
-            check=False
-        ))
+        await loop.run_in_executor(None, lambda: _run_tmux("send-keys", "-t", tmux_name, escaped, "Enter", check=False))
 
     _session_tmux_map[session_id] = tmux_name
     logger.info("Launched tmux session %s for session %s in %s", tmux_name, session_id, project_dir)
@@ -84,11 +78,13 @@ async def attach_session(session_id: str) -> int | None:
     # Use a PTY pair to pipe tmux I/O
     master_fd, slave_fd = os.openpty()
 
-    loop = asyncio.get_event_loop()
     try:
         # Start a process that connects tmux to our PTY
-        proc = await asyncio.create_subprocess_exec(
-            "tmux", "attach-session", "-t", tmux_name,
+        await asyncio.create_subprocess_exec(
+            "tmux",
+            "attach-session",
+            "-t",
+            tmux_name,
             stdin=slave_fd,
             stdout=slave_fd,
             stderr=slave_fd,
@@ -101,7 +97,7 @@ async def attach_session(session_id: str) -> int | None:
 
         return master_fd
 
-    except Exception as e:
+    except Exception:
         logger.exception("Failed to attach to tmux session %s", tmux_name)
         os.close(master_fd)
         os.close(slave_fd)
@@ -133,14 +129,10 @@ async def stop_session(session_id: str):
     loop = asyncio.get_event_loop()
     try:
         # Send Ctrl+C first
-        await loop.run_in_executor(None, lambda: _run_tmux(
-            "send-keys", "-t", tmux_name, "C-c", check=False
-        ))
+        await loop.run_in_executor(None, lambda: _run_tmux("send-keys", "-t", tmux_name, "C-c", check=False))
         await asyncio.sleep(1)
         # Kill the session
-        await loop.run_in_executor(None, lambda: _run_tmux(
-            "kill-session", "-t", tmux_name, check=False
-        ))
+        await loop.run_in_executor(None, lambda: _run_tmux("kill-session", "-t", tmux_name, check=False))
     except (subprocess.TimeoutExpired, FileNotFoundError):
         pass
 
@@ -160,10 +152,12 @@ async def list_tmux_sessions() -> list[dict]:
     """List all tmux sessions that belong to the command center."""
     loop = asyncio.get_event_loop()
     try:
-        result = await loop.run_in_executor(None, lambda: _run_tmux(
-            "list-sessions", "-F", "#{session_name}:#{session_created}:#{session_attached}",
-            check=False
-        ))
+        result = await loop.run_in_executor(
+            None,
+            lambda: _run_tmux(
+                "list-sessions", "-F", "#{session_name}:#{session_created}:#{session_attached}", check=False
+            ),
+        )
         if result.returncode != 0:
             return []
 
@@ -172,11 +166,13 @@ async def list_tmux_sessions() -> list[dict]:
             if not line or not line.startswith("cccc-"):
                 continue
             parts = line.split(":", 2)
-            sessions.append({
-                "tmux_name": parts[0],
-                "created": parts[1] if len(parts) > 1 else None,
-                "attached": parts[2] if len(parts) > 2 else "0",
-            })
+            sessions.append(
+                {
+                    "tmux_name": parts[0],
+                    "created": parts[1] if len(parts) > 1 else None,
+                    "attached": parts[2] if len(parts) > 2 else "0",
+                }
+            )
         return sessions
 
     except (subprocess.TimeoutExpired, FileNotFoundError):

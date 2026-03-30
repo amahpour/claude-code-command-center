@@ -4,18 +4,19 @@ import asyncio
 import json
 import os
 import tempfile
-from unittest.mock import patch, AsyncMock, MagicMock
+from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
+
 import server.db as db
 from server.watcher import (
+    _extract_activity_preview,
+    _extract_content,
+    _file_positions,
+    _generate_auto_title,
     _parse_jsonl_entry,
     _process_file_changes,
-    _file_positions,
-    _extract_content,
     _session_id_from_path,
-    _generate_auto_title,
-    _extract_activity_preview,
 )
 
 
@@ -28,11 +29,13 @@ async def setup_db():
 
 
 def test_parse_user_message():
-    line = json.dumps({
-        "type": "user",
-        "message": {"role": "user", "content": "Fix the auth bug"},
-        "timestamp": "2026-03-29T10:00:00Z",
-    })
+    line = json.dumps(
+        {
+            "type": "user",
+            "message": {"role": "user", "content": "Fix the auth bug"},
+            "timestamp": "2026-03-29T10:00:00Z",
+        }
+    )
     entry = _parse_jsonl_entry(line)
     assert entry is not None
     assert entry["role"] == "user"
@@ -41,14 +44,16 @@ def test_parse_user_message():
 
 
 def test_parse_assistant_text():
-    line = json.dumps({
-        "type": "assistant",
-        "message": {
-            "role": "assistant",
-            "content": [{"type": "text", "text": "I'll look into the auth module..."}],
-        },
-        "timestamp": "2026-03-29T10:00:05Z",
-    })
+    line = json.dumps(
+        {
+            "type": "assistant",
+            "message": {
+                "role": "assistant",
+                "content": [{"type": "text", "text": "I'll look into the auth module..."}],
+            },
+            "timestamp": "2026-03-29T10:00:05Z",
+        }
+    )
     entry = _parse_jsonl_entry(line)
     assert entry is not None
     assert entry["role"] == "assistant"
@@ -56,16 +61,18 @@ def test_parse_assistant_text():
 
 
 def test_parse_assistant_with_tool_use():
-    line = json.dumps({
-        "type": "assistant",
-        "message": {
-            "role": "assistant",
-            "content": [
-                {"type": "text", "text": "Let me read the file."},
-                {"type": "tool_use", "name": "Read", "input": {"file_path": "src/auth.ts"}},
-            ],
-        },
-    })
+    line = json.dumps(
+        {
+            "type": "assistant",
+            "message": {
+                "role": "assistant",
+                "content": [
+                    {"type": "text", "text": "Let me read the file."},
+                    {"type": "tool_use", "name": "Read", "input": {"file_path": "src/auth.ts"}},
+                ],
+            },
+        }
+    )
     entry = _parse_jsonl_entry(line)
     assert entry is not None
     assert entry["role"] == "assistant"
@@ -74,12 +81,14 @@ def test_parse_assistant_with_tool_use():
 
 
 def test_parse_tool_result():
-    line = json.dumps({
-        "type": "tool_result",
-        "tool_use_id": "toolu_123",
-        "content": "file contents here...",
-        "timestamp": "2026-03-29T10:00:06Z",
-    })
+    line = json.dumps(
+        {
+            "type": "tool_result",
+            "tool_use_id": "toolu_123",
+            "content": "file contents here...",
+            "timestamp": "2026-03-29T10:00:06Z",
+        }
+    )
     entry = _parse_jsonl_entry(line)
     assert entry is not None
     assert entry["role"] == "tool_result"
@@ -98,15 +107,17 @@ def test_parse_empty_content():
 
 
 def test_parse_with_usage():
-    line = json.dumps({
-        "type": "assistant",
-        "message": {
-            "role": "assistant",
-            "content": "Hello",
-            "model": "claude-opus-4-6",
-            "usage": {"input_tokens": 100, "output_tokens": 50},
-        },
-    })
+    line = json.dumps(
+        {
+            "type": "assistant",
+            "message": {
+                "role": "assistant",
+                "content": "Hello",
+                "model": "claude-opus-4-6",
+                "usage": {"input_tokens": 100, "output_tokens": 50},
+            },
+        }
+    )
     entry = _parse_jsonl_entry(line)
     assert entry is not None
     assert entry["token_count"] == 150
@@ -141,19 +152,27 @@ def test_session_id_from_path():
 
 async def test_process_file_changes():
     """Test reading new lines from a JSONL file."""
-    with tempfile.NamedTemporaryFile(
-        mode="w", suffix=".jsonl", delete=False, dir=tempfile.gettempdir()
-    ) as f:
-        f.write(json.dumps({
-            "type": "user",
-            "message": {"role": "user", "content": "Hello world"},
-            "timestamp": "2026-03-29T10:00:00Z",
-        }) + "\n")
-        f.write(json.dumps({
-            "type": "assistant",
-            "message": {"role": "assistant", "content": "Hi there!"},
-            "timestamp": "2026-03-29T10:00:01Z",
-        }) + "\n")
+    with tempfile.NamedTemporaryFile(mode="w", suffix=".jsonl", delete=False, dir=tempfile.gettempdir()) as f:
+        f.write(
+            json.dumps(
+                {
+                    "type": "user",
+                    "message": {"role": "user", "content": "Hello world"},
+                    "timestamp": "2026-03-29T10:00:00Z",
+                }
+            )
+            + "\n"
+        )
+        f.write(
+            json.dumps(
+                {
+                    "type": "assistant",
+                    "message": {"role": "assistant", "content": "Hi there!"},
+                    "timestamp": "2026-03-29T10:00:01Z",
+                }
+            )
+            + "\n"
+        )
         tmp_path = f.name
 
     try:
@@ -170,13 +189,16 @@ async def test_process_file_changes():
 
 async def test_incremental_reading():
     """Test that only new lines are read on subsequent calls."""
-    with tempfile.NamedTemporaryFile(
-        mode="w", suffix=".jsonl", delete=False, dir=tempfile.gettempdir()
-    ) as f:
-        f.write(json.dumps({
-            "type": "user",
-            "message": {"role": "user", "content": "First message"},
-        }) + "\n")
+    with tempfile.NamedTemporaryFile(mode="w", suffix=".jsonl", delete=False, dir=tempfile.gettempdir()) as f:
+        f.write(
+            json.dumps(
+                {
+                    "type": "user",
+                    "message": {"role": "user", "content": "First message"},
+                }
+            )
+            + "\n"
+        )
         tmp_path = f.name
 
     try:
@@ -185,10 +207,15 @@ async def test_incremental_reading():
 
         # Add more lines
         with open(tmp_path, "a") as f:
-            f.write(json.dumps({
-                "type": "user",
-                "message": {"role": "user", "content": "Second message"},
-            }) + "\n")
+            f.write(
+                json.dumps(
+                    {
+                        "type": "user",
+                        "message": {"role": "user", "content": "Second message"},
+                    }
+                )
+                + "\n"
+            )
 
         await _process_file_changes(tmp_path)
         transcripts = await db.get_session_transcripts(session_id)
@@ -200,10 +227,12 @@ async def test_incremental_reading():
 
 
 def test_parse_result_type():
-    line = json.dumps({
-        "type": "result",
-        "result": "Task completed successfully",
-    })
+    line = json.dumps(
+        {
+            "type": "result",
+            "result": "Task completed successfully",
+        }
+    )
     entry = _parse_jsonl_entry(line)
     assert entry is not None
     assert entry["role"] == "assistant"
@@ -214,13 +243,15 @@ def test_large_tool_input_not_truncated():
     """Tool inputs are no longer truncated — the UI handles overflow."""
     large_content = "x" * 1000
     large_input = {"file_path": "/tmp/big.py", "content": large_content}
-    line = json.dumps({
-        "type": "assistant",
-        "message": {
-            "role": "assistant",
-            "content": [{"type": "tool_use", "name": "Write", "input": large_input}],
-        },
-    })
+    line = json.dumps(
+        {
+            "type": "assistant",
+            "message": {
+                "role": "assistant",
+                "content": [{"type": "tool_use", "name": "Write", "input": large_input}],
+            },
+        }
+    )
     entry = _parse_jsonl_entry(line)
     assert entry is not None
     assert "/tmp/big.py" in entry["content"]
@@ -232,23 +263,27 @@ def test_large_tool_input_not_truncated():
 
 def test_format_tool_result_string():
     from server.watcher import _format_tool_result
+
     assert _format_tool_result("hello") == "hello"
 
 
 def test_format_tool_result_stdout():
     from server.watcher import _format_tool_result
+
     result = _format_tool_result({"stdout": "output here", "stderr": ""})
     assert result == "output here"
 
 
 def test_format_tool_result_stderr():
     from server.watcher import _format_tool_result
+
     result = _format_tool_result({"stdout": "", "stderr": "error here"})
     assert result == "error here"
 
 
 def test_format_tool_result_file_path():
     from server.watcher import _format_tool_result
+
     result = _format_tool_result({"filePath": "/tmp/test.py", "type": "Write", "content": "code"})
     assert "/tmp/test.py" in result
     assert "Write" in result
@@ -257,18 +292,21 @@ def test_format_tool_result_file_path():
 
 def test_format_tool_result_file_path_no_content():
     from server.watcher import _format_tool_result
+
     result = _format_tool_result({"file_path": "/tmp/test.py"})
     assert result == "/tmp/test.py"
 
 
 def test_format_tool_result_dict_fallback():
     from server.watcher import _format_tool_result
+
     result = _format_tool_result({"key": "value"})
     assert "key" in result  # JSON serialized
 
 
 def test_format_tool_result_other_type():
     from server.watcher import _format_tool_result
+
     assert _format_tool_result(42) == "42"
 
 
@@ -277,11 +315,13 @@ def test_format_tool_result_other_type():
 
 def test_format_tool_summary_read():
     from server.watcher import _format_tool_summary
+
     assert _format_tool_summary("Read", {"file_path": "/tmp/a.py"}) == "/tmp/a.py"
 
 
 def test_format_tool_summary_write():
     from server.watcher import _format_tool_summary
+
     result = _format_tool_summary("Write", {"file_path": "/tmp/b.py", "content": "hello"})
     assert "/tmp/b.py" in result
     assert "hello" in result
@@ -289,12 +329,14 @@ def test_format_tool_summary_write():
 
 def test_format_tool_summary_write_no_content():
     from server.watcher import _format_tool_summary
+
     result = _format_tool_summary("Write", {"file_path": "/tmp/b.py"})
     assert result == "/tmp/b.py"
 
 
 def test_format_tool_summary_edit():
     from server.watcher import _format_tool_summary
+
     result = _format_tool_summary("Edit", {"file_path": "/tmp/c.py", "old_string": "old", "new_string": "new"})
     assert "---" in result
     assert "+++" in result
@@ -302,6 +344,7 @@ def test_format_tool_summary_edit():
 
 def test_format_tool_summary_bash():
     from server.watcher import _format_tool_summary
+
     result = _format_tool_summary("Bash", {"command": "ls -la", "description": "list files"})
     assert "$ ls -la" in result
     assert "# list files" in result
@@ -309,12 +352,14 @@ def test_format_tool_summary_bash():
 
 def test_format_tool_summary_bash_no_desc():
     from server.watcher import _format_tool_summary
+
     result = _format_tool_summary("Bash", {"command": "pwd"})
     assert result == "$ pwd"
 
 
 def test_format_tool_summary_grep():
     from server.watcher import _format_tool_summary
+
     result = _format_tool_summary("Grep", {"pattern": "TODO", "path": "src/"})
     assert "TODO" in result
     assert "src/" in result
@@ -322,54 +367,63 @@ def test_format_tool_summary_grep():
 
 def test_format_tool_summary_glob():
     from server.watcher import _format_tool_summary
+
     result = _format_tool_summary("Glob", {"pattern": "*.py", "path": "."})
     assert "*.py" in result
 
 
 def test_format_tool_summary_agent():
     from server.watcher import _format_tool_summary
+
     result = _format_tool_summary("Agent", {"prompt": "do something"})
     assert result == "do something"
 
 
 def test_format_tool_summary_agent_with_description():
     from server.watcher import _format_tool_summary
+
     result = _format_tool_summary("Agent", {"description": "agent desc"})
     assert result == "agent desc"
 
 
 def test_format_tool_summary_taskupdate():
     from server.watcher import _format_tool_summary
+
     result = _format_tool_summary("TaskUpdate", {"subject": "task subject"})
     assert result == "task subject"
 
 
 def test_format_tool_summary_enter_plan_mode():
     from server.watcher import _format_tool_summary
+
     result = _format_tool_summary("EnterPlanMode", {"description": "Planning implementation"})
     assert result == "Planning implementation"
 
 
 def test_format_tool_summary_enter_plan_mode_default():
     from server.watcher import _format_tool_summary
+
     result = _format_tool_summary("EnterPlanMode", {})
     assert result == "Entering plan mode"
 
 
 def test_format_tool_summary_exit_plan_mode():
     from server.watcher import _format_tool_summary
+
     result = _format_tool_summary("ExitPlanMode", {"description": "Plan complete"})
     assert result == "Plan complete"
 
 
 def test_format_tool_summary_exit_plan_mode_default():
     from server.watcher import _format_tool_summary
+
     result = _format_tool_summary("ExitPlanMode", {})
     assert result == "Exiting plan mode"
 
 
 def test_format_tool_summary_generic():
     from server.watcher import _format_tool_summary
+
     result = _format_tool_summary("CustomTool", {"arg1": "val1", "arg2": "val2"})
     assert "arg1: val1" in result
     assert "arg2: val2" in result
@@ -377,6 +431,7 @@ def test_format_tool_summary_generic():
 
 def test_format_tool_summary_non_dict():
     from server.watcher import _format_tool_summary
+
     assert _format_tool_summary("Tool", "just a string") == "just a string"
 
 
@@ -435,6 +490,7 @@ def test_extract_content_whitespace_string():
 
 def test_infer_context_max():
     from server.watcher import _infer_context_max
+
     assert _infer_context_max(None) == 200000
     assert _infer_context_max("claude-opus-4-6") == 1000000
     assert _infer_context_max("claude-sonnet-4-6") == 200000
@@ -447,6 +503,7 @@ def test_infer_context_max():
 
 async def test_extract_ticket_id_match():
     from server.watcher import _extract_ticket_id
+
     await db.set_setting("jira_project_keys", '["PROJ", "DEV"]')
     result = await _extract_ticket_id("feature/PROJ-123-fix-bug")
     assert result == "PROJ-123"
@@ -454,12 +511,14 @@ async def test_extract_ticket_id_match():
 
 async def test_extract_ticket_id_no_keys():
     from server.watcher import _extract_ticket_id
+
     result = await _extract_ticket_id("feature/PROJ-123")
     assert result is None
 
 
 async def test_extract_ticket_id_no_match():
     from server.watcher import _extract_ticket_id
+
     await db.set_setting("jira_project_keys", '["PROJ"]')
     result = await _extract_ticket_id("feature/no-ticket-here")
     assert result is None
@@ -467,6 +526,7 @@ async def test_extract_ticket_id_no_match():
 
 async def test_extract_ticket_id_bad_json():
     from server.watcher import _extract_ticket_id
+
     await db.set_setting("jira_project_keys", "not-json")
     result = await _extract_ticket_id("feature/PROJ-1")
     assert result is None
@@ -474,6 +534,7 @@ async def test_extract_ticket_id_bad_json():
 
 async def test_extract_ticket_id_empty_keys():
     from server.watcher import _extract_ticket_id
+
     await db.set_setting("jira_project_keys", "[]")
     result = await _extract_ticket_id("feature/PROJ-1")
     assert result is None
@@ -493,28 +554,34 @@ def test_parse_non_dict():
 
 
 def test_parse_user_meta_message():
-    line = json.dumps({
-        "type": "user",
-        "isMeta": True,
-        "message": {"role": "user", "content": "meta info"},
-    })
+    line = json.dumps(
+        {
+            "type": "user",
+            "isMeta": True,
+            "message": {"role": "user", "content": "meta info"},
+        }
+    )
     assert _parse_jsonl_entry(line) is None
 
 
 def test_parse_user_system_xml():
-    line = json.dumps({
-        "type": "user",
-        "message": {"role": "user", "content": "<command-start>test</command-start>"},
-    })
+    line = json.dumps(
+        {
+            "type": "user",
+            "message": {"role": "user", "content": "<command-start>test</command-start>"},
+        }
+    )
     assert _parse_jsonl_entry(line) is None
 
 
 def test_parse_user_with_tool_result():
-    line = json.dumps({
-        "type": "user",
-        "message": {"role": "user", "content": ""},
-        "toolUseResult": {"stdout": "output here", "stderr": ""},
-    })
+    line = json.dumps(
+        {
+            "type": "user",
+            "message": {"role": "user", "content": ""},
+            "toolUseResult": {"stdout": "output here", "stderr": ""},
+        }
+    )
     entry = _parse_jsonl_entry(line)
     assert entry is not None
     assert entry["role"] == "tool_result"
@@ -522,19 +589,21 @@ def test_parse_user_with_tool_result():
 
 
 def test_parse_assistant_with_cache_tokens():
-    line = json.dumps({
-        "type": "assistant",
-        "message": {
-            "role": "assistant",
-            "content": "Response text",
-            "usage": {
-                "input_tokens": 100,
-                "output_tokens": 50,
-                "cache_creation_input_tokens": 20,
-                "cache_read_input_tokens": 30,
+    line = json.dumps(
+        {
+            "type": "assistant",
+            "message": {
+                "role": "assistant",
+                "content": "Response text",
+                "usage": {
+                    "input_tokens": 100,
+                    "output_tokens": 50,
+                    "cache_creation_input_tokens": 20,
+                    "cache_read_input_tokens": 30,
+                },
             },
-        },
-    })
+        }
+    )
     entry = _parse_jsonl_entry(line)
     assert entry is not None
     assert entry["usage"]["cache_tokens"] == 50  # 20 + 30
@@ -542,25 +611,29 @@ def test_parse_assistant_with_cache_tokens():
 
 
 def test_parse_unknown_type_with_role_in_message():
-    line = json.dumps({
-        "type": "unknown",
-        "message": {"role": "system", "content": "some system message"},
-    })
+    line = json.dumps(
+        {
+            "type": "unknown",
+            "message": {"role": "system", "content": "some system message"},
+        }
+    )
     entry = _parse_jsonl_entry(line)
     assert entry is not None
     assert entry["role"] == "system"
 
 
 def test_parse_entry_with_metadata():
-    line = json.dumps({
-        "type": "assistant",
-        "message": {"role": "assistant", "content": "Hello"},
-        "gitBranch": "main",
-        "sessionId": "sess-1",
-        "cwd": "/tmp",
-        "slug": "my-session",
-        "effortLevel": "high",
-    })
+    line = json.dumps(
+        {
+            "type": "assistant",
+            "message": {"role": "assistant", "content": "Hello"},
+            "gitBranch": "main",
+            "sessionId": "sess-1",
+            "cwd": "/tmp",
+            "slug": "my-session",
+            "effortLevel": "high",
+        }
+    )
     entry = _parse_jsonl_entry(line)
     assert entry["git_branch"] == "main"
     assert entry["session_id"] == "sess-1"
@@ -571,10 +644,12 @@ def test_parse_entry_with_metadata():
 
 def test_parse_message_not_dict():
     """When message field is not a dict."""
-    line = json.dumps({
-        "type": "user",
-        "message": "just a string",
-    })
+    line = json.dumps(
+        {
+            "type": "user",
+            "message": "just a string",
+        }
+    )
     entry = _parse_jsonl_entry(line)
     # content comes from message.get("content") which fails -> falls back
     # The entry should be None since no content can be extracted
@@ -583,11 +658,13 @@ def test_parse_message_not_dict():
 
 def test_parse_user_fallback_to_top_level_content():
     """User message falls back to top-level content."""
-    line = json.dumps({
-        "type": "user",
-        "message": {"role": "user", "content": ""},
-        "content": "top-level content",
-    })
+    line = json.dumps(
+        {
+            "type": "user",
+            "message": {"role": "user", "content": ""},
+            "content": "top-level content",
+        }
+    )
     entry = _parse_jsonl_entry(line)
     assert entry is not None
     assert entry["content"] == "top-level content"
@@ -598,28 +675,40 @@ def test_parse_user_fallback_to_top_level_content():
 
 async def test_process_file_with_metadata_enrichment():
     """Test that session is enriched with model, branch, cwd from JSONL entries."""
-    with tempfile.NamedTemporaryFile(
-        mode="w", suffix=".jsonl", delete=False, dir=tempfile.gettempdir()
-    ) as f:
-        f.write(json.dumps({
-            "type": "user",
-            "message": {"role": "user", "content": "Fix the bug in authentication module"},
-            "timestamp": "2026-03-29T10:00:00Z",
-            "gitBranch": "feature/PROJ-42-fix-auth",
-            "cwd": "/home/user/myproject",
-        }) + "\n")
-        f.write(json.dumps({
-            "type": "assistant",
-            "message": {
-                "role": "assistant",
-                "content": "Looking into it",
-                "model": "claude-opus-4-6",
-                "usage": {"input_tokens": 500, "output_tokens": 100,
-                          "cache_creation_input_tokens": 0, "cache_read_input_tokens": 0},
-            },
-            "slug": "fix-auth",
-            "effortLevel": "high",
-        }) + "\n")
+    with tempfile.NamedTemporaryFile(mode="w", suffix=".jsonl", delete=False, dir=tempfile.gettempdir()) as f:
+        f.write(
+            json.dumps(
+                {
+                    "type": "user",
+                    "message": {"role": "user", "content": "Fix the bug in authentication module"},
+                    "timestamp": "2026-03-29T10:00:00Z",
+                    "gitBranch": "feature/PROJ-42-fix-auth",
+                    "cwd": "/home/user/myproject",
+                }
+            )
+            + "\n"
+        )
+        f.write(
+            json.dumps(
+                {
+                    "type": "assistant",
+                    "message": {
+                        "role": "assistant",
+                        "content": "Looking into it",
+                        "model": "claude-opus-4-6",
+                        "usage": {
+                            "input_tokens": 500,
+                            "output_tokens": 100,
+                            "cache_creation_input_tokens": 0,
+                            "cache_read_input_tokens": 0,
+                        },
+                    },
+                    "slug": "fix-auth",
+                    "effortLevel": "high",
+                }
+            )
+            + "\n"
+        )
         tmp_path = f.name
 
     try:
@@ -644,14 +733,17 @@ async def test_process_file_with_ticket_extraction():
     """Test that ticket ID is extracted from branch name."""
     await db.set_setting("jira_project_keys", '["PROJ"]')
 
-    with tempfile.NamedTemporaryFile(
-        mode="w", suffix=".jsonl", delete=False, dir=tempfile.gettempdir()
-    ) as f:
-        f.write(json.dumps({
-            "type": "user",
-            "message": {"role": "user", "content": "Working on the ticket"},
-            "gitBranch": "feature/PROJ-42-fix-auth",
-        }) + "\n")
+    with tempfile.NamedTemporaryFile(mode="w", suffix=".jsonl", delete=False, dir=tempfile.gettempdir()) as f:
+        f.write(
+            json.dumps(
+                {
+                    "type": "user",
+                    "message": {"role": "user", "content": "Working on the ticket"},
+                    "gitBranch": "feature/PROJ-42-fix-auth",
+                }
+            )
+            + "\n"
+        )
         tmp_path = f.name
 
     try:
@@ -665,22 +757,26 @@ async def test_process_file_with_ticket_extraction():
 
 async def test_process_file_pr_lookup():
     """Test that PR URL is looked up and stored."""
-    from unittest.mock import patch, AsyncMock
+    from unittest.mock import AsyncMock, patch
 
-    with tempfile.NamedTemporaryFile(
-        mode="w", suffix=".jsonl", delete=False, dir=tempfile.gettempdir()
-    ) as f:
-        f.write(json.dumps({
-            "type": "user",
-            "message": {"role": "user", "content": "Working on PR"},
-            "gitBranch": "feature/my-pr",
-            "cwd": "/home/user/repo",
-        }) + "\n")
+    with tempfile.NamedTemporaryFile(mode="w", suffix=".jsonl", delete=False, dir=tempfile.gettempdir()) as f:
+        f.write(
+            json.dumps(
+                {
+                    "type": "user",
+                    "message": {"role": "user", "content": "Working on PR"},
+                    "gitBranch": "feature/my-pr",
+                    "cwd": "/home/user/repo",
+                }
+            )
+            + "\n"
+        )
         tmp_path = f.name
 
     try:
-        with patch("server.watcher.find_pr_url", new_callable=AsyncMock,
-                    return_value="https://github.com/org/repo/pull/99"):
+        with patch(
+            "server.watcher.find_pr_url", new_callable=AsyncMock, return_value="https://github.com/org/repo/pull/99"
+        ):
             await _process_file_changes(tmp_path)
             session_id = os.path.splitext(os.path.basename(tmp_path))[0]
             session = await db.get_session(session_id)
@@ -691,22 +787,24 @@ async def test_process_file_pr_lookup():
 
 async def test_process_file_pr_lookup_failure():
     """PR lookup failure should not crash processing."""
-    from unittest.mock import patch, AsyncMock
+    from unittest.mock import AsyncMock, patch
 
-    with tempfile.NamedTemporaryFile(
-        mode="w", suffix=".jsonl", delete=False, dir=tempfile.gettempdir()
-    ) as f:
-        f.write(json.dumps({
-            "type": "user",
-            "message": {"role": "user", "content": "Working on something"},
-            "gitBranch": "main",
-            "cwd": "/tmp/proj",
-        }) + "\n")
+    with tempfile.NamedTemporaryFile(mode="w", suffix=".jsonl", delete=False, dir=tempfile.gettempdir()) as f:
+        f.write(
+            json.dumps(
+                {
+                    "type": "user",
+                    "message": {"role": "user", "content": "Working on something"},
+                    "gitBranch": "main",
+                    "cwd": "/tmp/proj",
+                }
+            )
+            + "\n"
+        )
         tmp_path = f.name
 
     try:
-        with patch("server.watcher.find_pr_url", new_callable=AsyncMock,
-                    side_effect=Exception("lookup failed")):
+        with patch("server.watcher.find_pr_url", new_callable=AsyncMock, side_effect=Exception("lookup failed")):
             await _process_file_changes(tmp_path)  # Should not raise
     finally:
         os.unlink(tmp_path)
@@ -814,15 +912,18 @@ def test_extract_activity_preview_uses_latest():
 
 async def test_process_file_auto_title_from_branch():
     """Auto-title should use git branch when available."""
-    with tempfile.NamedTemporaryFile(
-        mode="w", suffix=".jsonl", delete=False, dir=tempfile.gettempdir()
-    ) as f:
-        f.write(json.dumps({
-            "type": "user",
-            "message": {"role": "user", "content": "Fix the authentication bug in the login module"},
-            "timestamp": "2026-03-29T10:00:00Z",
-            "gitBranch": "feature/PROJ-42-fix-auth-bug",
-        }) + "\n")
+    with tempfile.NamedTemporaryFile(mode="w", suffix=".jsonl", delete=False, dir=tempfile.gettempdir()) as f:
+        f.write(
+            json.dumps(
+                {
+                    "type": "user",
+                    "message": {"role": "user", "content": "Fix the authentication bug in the login module"},
+                    "timestamp": "2026-03-29T10:00:00Z",
+                    "gitBranch": "feature/PROJ-42-fix-auth-bug",
+                }
+            )
+            + "\n"
+        )
         tmp_path = f.name
 
     try:
@@ -837,14 +938,17 @@ async def test_process_file_auto_title_from_branch():
 
 async def test_process_file_locked_skips_auto_title():
     """Locked sessions should not have their display_name overwritten."""
-    with tempfile.NamedTemporaryFile(
-        mode="w", suffix=".jsonl", delete=False, dir=tempfile.gettempdir()
-    ) as f:
-        f.write(json.dumps({
-            "type": "user",
-            "message": {"role": "user", "content": "Fix the authentication bug"},
-            "gitBranch": "feature/something-else",
-        }) + "\n")
+    with tempfile.NamedTemporaryFile(mode="w", suffix=".jsonl", delete=False, dir=tempfile.gettempdir()) as f:
+        f.write(
+            json.dumps(
+                {
+                    "type": "user",
+                    "message": {"role": "user", "content": "Fix the authentication bug"},
+                    "gitBranch": "feature/something-else",
+                }
+            )
+            + "\n"
+        )
         tmp_path = f.name
 
     try:
@@ -862,23 +966,39 @@ async def test_process_file_locked_skips_auto_title():
 
 async def test_process_file_preview_updated():
     """Preview should be set from tool call entries."""
-    with tempfile.NamedTemporaryFile(
-        mode="w", suffix=".jsonl", delete=False, dir=tempfile.gettempdir()
-    ) as f:
-        f.write(json.dumps({
-            "type": "user",
-            "message": {"role": "user", "content": "Fix the bug"},
-        }) + "\n")
-        f.write(json.dumps({
-            "type": "assistant",
-            "message": {
-                "role": "assistant",
-                "content": [
-                    {"type": "text", "text": "Let me edit the file."},
-                    {"type": "tool_use", "name": "Edit", "input": {"file_path": "/tmp/server/watcher.py", "old_string": "old", "new_string": "new"}},
-                ],
-            },
-        }) + "\n")
+    with tempfile.NamedTemporaryFile(mode="w", suffix=".jsonl", delete=False, dir=tempfile.gettempdir()) as f:
+        f.write(
+            json.dumps(
+                {
+                    "type": "user",
+                    "message": {"role": "user", "content": "Fix the bug"},
+                }
+            )
+            + "\n"
+        )
+        f.write(
+            json.dumps(
+                {
+                    "type": "assistant",
+                    "message": {
+                        "role": "assistant",
+                        "content": [
+                            {"type": "text", "text": "Let me edit the file."},
+                            {
+                                "type": "tool_use",
+                                "name": "Edit",
+                                "input": {
+                                    "file_path": "/tmp/server/watcher.py",
+                                    "old_string": "old",
+                                    "new_string": "new",
+                                },
+                            },
+                        ],
+                    },
+                }
+            )
+            + "\n"
+        )
         tmp_path = f.name
 
     try:
@@ -896,10 +1016,9 @@ async def test_process_file_preview_updated():
 
 
 async def test_schedule_process():
-    from server.watcher import _schedule_process, _debounce_tasks
-    import asyncio
+    from server.watcher import _debounce_tasks, _schedule_process
 
-    with patch("server.watcher._debounced_process", new_callable=AsyncMock) as mock_proc:
+    with patch("server.watcher._debounced_process", new_callable=AsyncMock):
         _schedule_process("/tmp/test.jsonl")
         assert "/tmp/test.jsonl" in _debounce_tasks
         # Cancel to clean up
@@ -912,8 +1031,7 @@ async def test_schedule_process():
 
 
 async def test_schedule_process_replaces_existing():
-    from server.watcher import _schedule_process, _debounce_tasks
-    import asyncio
+    from server.watcher import _debounce_tasks, _schedule_process
 
     with patch("server.watcher._debounced_process", new_callable=AsyncMock):
         _schedule_process("/tmp/replace.jsonl")
@@ -931,9 +1049,10 @@ async def test_schedule_process_replaces_existing():
 
 
 def test_stop_watcher():
-    from server.watcher import stop_watcher, _debounce_tasks
-    import server.watcher as watcher_mod
     from unittest.mock import MagicMock
+
+    import server.watcher as watcher_mod
+    from server.watcher import _debounce_tasks, stop_watcher
 
     mock_task = MagicMock()
     mock_task.done.return_value = False
@@ -954,7 +1073,6 @@ def test_stop_watcher():
 async def test_start_watcher_no_dir():
     """start_watcher should return early if projects dir doesn't exist."""
     from server.watcher import start_watcher
-    import server.watcher as watcher_mod
 
     with patch("os.path.isdir", return_value=False):
         await start_watcher()
@@ -963,13 +1081,16 @@ async def test_start_watcher_no_dir():
 
 async def test_process_file_skips_short_task_descriptions():
     """Short user messages (<= 5 chars) should not become task descriptions."""
-    with tempfile.NamedTemporaryFile(
-        mode="w", suffix=".jsonl", delete=False, dir=tempfile.gettempdir()
-    ) as f:
-        f.write(json.dumps({
-            "type": "user",
-            "message": {"role": "user", "content": "Hi"},
-        }) + "\n")
+    with tempfile.NamedTemporaryFile(mode="w", suffix=".jsonl", delete=False, dir=tempfile.gettempdir()) as f:
+        f.write(
+            json.dumps(
+                {
+                    "type": "user",
+                    "message": {"role": "user", "content": "Hi"},
+                }
+            )
+            + "\n"
+        )
         tmp_path = f.name
 
     try:
@@ -983,13 +1104,16 @@ async def test_process_file_skips_short_task_descriptions():
 
 async def test_process_file_empty_lines():
     """Test processing file with only empty lines after existing content."""
-    with tempfile.NamedTemporaryFile(
-        mode="w", suffix=".jsonl", delete=False, dir=tempfile.gettempdir()
-    ) as f:
-        f.write(json.dumps({
-            "type": "user",
-            "message": {"role": "user", "content": "Hello there from test"},
-        }) + "\n")
+    with tempfile.NamedTemporaryFile(mode="w", suffix=".jsonl", delete=False, dir=tempfile.gettempdir()) as f:
+        f.write(
+            json.dumps(
+                {
+                    "type": "user",
+                    "message": {"role": "user", "content": "Hello there from test"},
+                }
+            )
+            + "\n"
+        )
         tmp_path = f.name
 
     try:
@@ -1009,9 +1133,7 @@ async def test_process_file_empty_lines():
 
 async def test_process_file_task_description_not_overwritten():
     """Task description should not be overwritten if already set."""
-    with tempfile.NamedTemporaryFile(
-        mode="w", suffix=".jsonl", delete=False, dir=tempfile.gettempdir()
-    ) as f:
+    with tempfile.NamedTemporaryFile(mode="w", suffix=".jsonl", delete=False, dir=tempfile.gettempdir()) as f:
         tmp_path = f.name
         session_id = os.path.splitext(os.path.basename(tmp_path))[0]
 
@@ -1019,10 +1141,15 @@ async def test_process_file_task_description_not_overwritten():
     await db.create_session(session_id, task_description="Existing task")
 
     with open(tmp_path, "w") as f:
-        f.write(json.dumps({
-            "type": "user",
-            "message": {"role": "user", "content": "This is a new user message that is long enough"},
-        }) + "\n")
+        f.write(
+            json.dumps(
+                {
+                    "type": "user",
+                    "message": {"role": "user", "content": "This is a new user message that is long enough"},
+                }
+            )
+            + "\n"
+        )
 
     try:
         await _process_file_changes(tmp_path)
@@ -1036,11 +1163,10 @@ async def test_start_watcher_with_dir():
     """start_watcher should create a task when projects dir exists."""
     import server.watcher as watcher_mod
 
-    with patch("os.path.isdir", return_value=True):
-        with patch("asyncio.create_task") as mock_task:
-            mock_task.return_value = MagicMock()
-            # Mock watchfiles import
-            await watcher_mod.start_watcher()
+    with patch("os.path.isdir", return_value=True), patch("asyncio.create_task") as mock_task:
+        mock_task.return_value = MagicMock()
+        # Mock watchfiles import
+        await watcher_mod.start_watcher()
 
     # cleanup
     if watcher_mod._watcher_task and not isinstance(watcher_mod._watcher_task, MagicMock):
@@ -1050,23 +1176,26 @@ async def test_start_watcher_with_dir():
 
 async def test_process_file_with_context_tokens():
     """Test that context usage is calculated from latest usage snapshot."""
-    with tempfile.NamedTemporaryFile(
-        mode="w", suffix=".jsonl", delete=False, dir=tempfile.gettempdir()
-    ) as f:
-        f.write(json.dumps({
-            "type": "assistant",
-            "message": {
-                "role": "assistant",
-                "content": "Response",
-                "model": "claude-sonnet-4-6",
-                "usage": {
-                    "input_tokens": 50000,
-                    "output_tokens": 1000,
-                    "cache_creation_input_tokens": 10000,
-                    "cache_read_input_tokens": 5000,
-                },
-            },
-        }) + "\n")
+    with tempfile.NamedTemporaryFile(mode="w", suffix=".jsonl", delete=False, dir=tempfile.gettempdir()) as f:
+        f.write(
+            json.dumps(
+                {
+                    "type": "assistant",
+                    "message": {
+                        "role": "assistant",
+                        "content": "Response",
+                        "model": "claude-sonnet-4-6",
+                        "usage": {
+                            "input_tokens": 50000,
+                            "output_tokens": 1000,
+                            "cache_creation_input_tokens": 10000,
+                            "cache_read_input_tokens": 5000,
+                        },
+                    },
+                }
+            )
+            + "\n"
+        )
         tmp_path = f.name
 
     try:
@@ -1088,13 +1217,16 @@ async def test_process_file_with_context_tokens():
 
 async def test_process_file_reads_empty_after_position():
     """File with no new content after last read should return early."""
-    with tempfile.NamedTemporaryFile(
-        mode="w", suffix=".jsonl", delete=False, dir=tempfile.gettempdir()
-    ) as f:
-        f.write(json.dumps({
-            "type": "user",
-            "message": {"role": "user", "content": "Initial content here"},
-        }) + "\n")
+    with tempfile.NamedTemporaryFile(mode="w", suffix=".jsonl", delete=False, dir=tempfile.gettempdir()) as f:
+        f.write(
+            json.dumps(
+                {
+                    "type": "user",
+                    "message": {"role": "user", "content": "Initial content here"},
+                }
+            )
+            + "\n"
+        )
         tmp_path = f.name
 
     try:
@@ -1110,15 +1242,18 @@ async def test_process_file_reads_empty_after_position():
 
 async def test_process_file_with_unparseable_lines():
     """Unparseable lines should be skipped without error."""
-    with tempfile.NamedTemporaryFile(
-        mode="w", suffix=".jsonl", delete=False, dir=tempfile.gettempdir()
-    ) as f:
+    with tempfile.NamedTemporaryFile(mode="w", suffix=".jsonl", delete=False, dir=tempfile.gettempdir()) as f:
         f.write("not valid json\n")
         f.write(json.dumps({"type": "system", "data": "skip"}) + "\n")
-        f.write(json.dumps({
-            "type": "user",
-            "message": {"role": "user", "content": "Valid message here"},
-        }) + "\n")
+        f.write(
+            json.dumps(
+                {
+                    "type": "user",
+                    "message": {"role": "user", "content": "Valid message here"},
+                }
+            )
+            + "\n"
+        )
         tmp_path = f.name
 
     try:
@@ -1144,8 +1279,10 @@ async def test_debounced_process():
 
 async def test_start_watcher_import_error():
     """start_watcher handles missing watchfiles gracefully."""
-    import server.watcher as watcher_mod
     import builtins
+
+    import server.watcher as watcher_mod
+
     original_import = builtins.__import__
 
     def mock_import(name, *args, **kwargs):
@@ -1153,24 +1290,31 @@ async def test_start_watcher_import_error():
             raise ImportError("no watchfiles")
         return original_import(name, *args, **kwargs)
 
-    with patch("os.path.isdir", return_value=True):
-        with patch("builtins.__import__", side_effect=mock_import):
-            await watcher_mod.start_watcher()
+    with patch("os.path.isdir", return_value=True), patch("builtins.__import__", side_effect=mock_import):
+        await watcher_mod.start_watcher()
 
 
 async def test_process_file_skips_system_looking_content():
     """Messages starting with < or { or [ should not become task descriptions."""
-    with tempfile.NamedTemporaryFile(
-        mode="w", suffix=".jsonl", delete=False, dir=tempfile.gettempdir()
-    ) as f:
-        f.write(json.dumps({
-            "type": "user",
-            "message": {"role": "user", "content": "{json object here}"},
-        }) + "\n")
-        f.write(json.dumps({
-            "type": "user",
-            "message": {"role": "user", "content": "This is a real task for the session"},
-        }) + "\n")
+    with tempfile.NamedTemporaryFile(mode="w", suffix=".jsonl", delete=False, dir=tempfile.gettempdir()) as f:
+        f.write(
+            json.dumps(
+                {
+                    "type": "user",
+                    "message": {"role": "user", "content": "{json object here}"},
+                }
+            )
+            + "\n"
+        )
+        f.write(
+            json.dumps(
+                {
+                    "type": "user",
+                    "message": {"role": "user", "content": "This is a real task for the session"},
+                }
+            )
+            + "\n"
+        )
         tmp_path = f.name
 
     try:

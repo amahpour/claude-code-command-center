@@ -1,7 +1,9 @@
 """Tests for the database layer."""
 
-import pytest
 from unittest.mock import patch
+
+import pytest
+
 import server.db as db
 
 
@@ -16,9 +18,7 @@ async def setup_db():
 async def test_tables_created():
     """Tables should exist after init."""
     conn = await db.get_db()
-    cursor = await conn.execute(
-        "SELECT name FROM sqlite_master WHERE type='table' ORDER BY name"
-    )
+    cursor = await conn.execute("SELECT name FROM sqlite_master WHERE type='table' ORDER BY name")
     tables = [row[0] for row in await cursor.fetchall()]
     assert "sessions" in tables
     assert "events" in tables
@@ -26,9 +26,7 @@ async def test_tables_created():
 
 
 async def test_create_session():
-    session = await db.create_session(
-        "sess-1", project_path="/home/user/myproject", model="opus"
-    )
+    session = await db.create_session("sess-1", project_path="/home/user/myproject", model="opus")
     assert session["id"] == "sess-1"
     assert session["project_name"] == "myproject"
     assert session["model"] == "opus"
@@ -188,6 +186,7 @@ async def test_get_db_without_init():
 def test_get_db_path_default():
     """Test _get_db_path returns default path."""
     import os
+
     with patch.dict(os.environ, {}, clear=True):
         path = db._get_db_path()
         assert "data.db" in path
@@ -196,13 +195,16 @@ def test_get_db_path_default():
 def test_get_db_path_from_env():
     """Test _get_db_path respects env override."""
     import os
+
     with patch.dict(os.environ, {"CCCC_DB_PATH": "/tmp/test.db"}):
         assert db._get_db_path() == "/tmp/test.db"
 
 
 async def test_init_db_with_file_path():
     """Test init_db creates directory for file-based DB."""
-    import tempfile, os
+    import os
+    import tempfile
+
     await db.close_db()
     with tempfile.TemporaryDirectory() as d:
         path = os.path.join(d, "subdir", "test.db")

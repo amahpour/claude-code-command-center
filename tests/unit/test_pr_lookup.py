@@ -4,18 +4,15 @@ import os
 import tempfile
 from unittest.mock import AsyncMock, MagicMock, patch
 
-import pytest
-
 from server.pr_lookup import (
+    _find_github_pr,
+    _find_gitlab_mr,
     _get_client,
     _get_github_token,
     _get_gitlab_token,
-    parse_git_remote,
     find_pr_url,
-    _find_github_pr,
-    _find_gitlab_mr,
+    parse_git_remote,
 )
-
 
 # --- Token resolution ---
 
@@ -27,34 +24,30 @@ def test_get_github_token_from_env():
 
 
 def test_get_github_token_gh_token_env():
-    with patch.dict(os.environ, {"GH_TOKEN": "ghp_alt"}, clear=False):
-        with patch("os.path.isfile", return_value=False):
-            token = _get_github_token()
-            # May get GITHUB_TOKEN if set in env; just verify it returns something or GH_TOKEN
-            assert token is not None or True  # non-fatal
+    with patch.dict(os.environ, {"GH_TOKEN": "ghp_alt"}, clear=False), patch("os.path.isfile", return_value=False):
+        token = _get_github_token()
+        # May get GITHUB_TOKEN if set in env; just verify it returns something or GH_TOKEN
+        assert token is not None  # non-fatal if env has no GH_TOKEN
 
 
 def test_get_github_token_no_token():
-    with patch.dict(os.environ, {}, clear=True):
-        with patch("os.path.isfile", return_value=False):
-            assert _get_github_token() is None
+    with patch.dict(os.environ, {}, clear=True), patch("os.path.isfile", return_value=False):
+        assert _get_github_token() is None
 
 
 def test_get_github_token_from_gh_config_no_yaml():
     """Test gh config parsing without yaml library (manual regex)."""
     config_content = "github.com:\n    oauth_token: ghp_fromconfig\n    user: testuser\n"
-    with patch.dict(os.environ, {}, clear=True):
-        with patch("os.path.isfile", return_value=True):
-            with patch("builtins.open", create=True) as mock_open:
-                # First call raises ImportError (no yaml), second call reads file
-                mock_open.return_value.__enter__ = lambda s: s
-                mock_open.return_value.__exit__ = MagicMock(return_value=False)
-                mock_open.return_value.read = MagicMock(return_value=config_content)
+    with patch.dict(os.environ, {}, clear=True), patch("os.path.isfile", return_value=True):
+        with patch("builtins.open", create=True) as mock_open:
+            # First call raises ImportError (no yaml), second call reads file
+            mock_open.return_value.__enter__ = lambda s: s
+            mock_open.return_value.__exit__ = MagicMock(return_value=False)
+            mock_open.return_value.read = MagicMock(return_value=config_content)
 
-                with patch.dict("sys.modules", {"yaml": None}):
-                    import importlib
-                    # Just test that the function doesn't crash
-                    token = _get_github_token()
+            with patch.dict("sys.modules", {"yaml": None}):
+                # Just test that the function doesn't crash
+                _get_github_token()
 
 
 def test_get_gitlab_token_from_env():
@@ -82,7 +75,9 @@ def test_parse_git_remote_ssh():
         git_dir = os.path.join(d, ".git")
         os.makedirs(git_dir)
         with open(os.path.join(git_dir, "config"), "w") as f:
-            f.write('[remote "origin"]\n\turl = git@github.com:owner/repo.git\n\tfetch = +refs/heads/*:refs/remotes/origin/*\n')
+            f.write(
+                '[remote "origin"]\n\turl = git@github.com:owner/repo.git\n\tfetch = +refs/heads/*:refs/remotes/origin/*\n'
+            )
 
         result = parse_git_remote(d)
         assert result is not None
@@ -153,7 +148,7 @@ def test_parse_git_remote_bad_config():
             f.write("this is not valid ini format \x00\x01\x02")
 
         # Should return None, not crash
-        result = parse_git_remote(d)
+        parse_git_remote(d)
         # configparser may or may not parse this; just ensure no exception
 
 
@@ -230,8 +225,7 @@ async def test_find_github_pr_with_token():
 
 
 async def test_find_gitlab_mr_success():
-    remote = {"host": "gitlab.com", "owner": "group", "repo": "repo",
-              "full_path": "group/repo", "platform": "gitlab"}
+    remote = {"host": "gitlab.com", "owner": "group", "repo": "repo", "full_path": "group/repo", "platform": "gitlab"}
     mock_response = MagicMock()
     mock_response.status_code = 200
     mock_response.json.return_value = [{"web_url": "https://gitlab.com/group/repo/-/merge_requests/10"}]
@@ -246,8 +240,7 @@ async def test_find_gitlab_mr_success():
 
 
 async def test_find_gitlab_mr_no_results():
-    remote = {"host": "gitlab.com", "owner": "group", "repo": "repo",
-              "full_path": "group/repo", "platform": "gitlab"}
+    remote = {"host": "gitlab.com", "owner": "group", "repo": "repo", "full_path": "group/repo", "platform": "gitlab"}
     mock_response = MagicMock()
     mock_response.status_code = 200
     mock_response.json.return_value = []
@@ -262,8 +255,7 @@ async def test_find_gitlab_mr_no_results():
 
 
 async def test_find_gitlab_mr_with_token():
-    remote = {"host": "gitlab.com", "owner": "group", "repo": "repo",
-              "full_path": "group/repo", "platform": "gitlab"}
+    remote = {"host": "gitlab.com", "owner": "group", "repo": "repo", "full_path": "group/repo", "platform": "gitlab"}
     mock_response = MagicMock()
     mock_response.status_code = 200
     mock_response.json.return_value = [{"web_url": "https://gitlab.com/group/repo/-/merge_requests/5"}]
@@ -281,8 +273,7 @@ async def test_find_gitlab_mr_with_token():
 
 
 async def test_find_gitlab_mr_api_error():
-    remote = {"host": "gitlab.com", "owner": "group", "repo": "repo",
-              "full_path": "group/repo", "platform": "gitlab"}
+    remote = {"host": "gitlab.com", "owner": "group", "repo": "repo", "full_path": "group/repo", "platform": "gitlab"}
     mock_response = MagicMock()
     mock_response.status_code = 500
 
@@ -332,35 +323,33 @@ async def test_find_pr_url_exception_returns_none():
 def test_get_github_token_from_gh_config_with_yaml():
     """Test gh config parsing with yaml library available."""
     mock_yaml = MagicMock()
-    mock_yaml.safe_load.return_value = {
-        "github.com": {"oauth_token": "ghp_yamltoken", "user": "testuser"}
-    }
+    mock_yaml.safe_load.return_value = {"github.com": {"oauth_token": "ghp_yamltoken", "user": "testuser"}}
 
-    with patch.dict(os.environ, {}, clear=True):
-        with patch("os.path.isfile", return_value=True):
-            with patch("builtins.open", MagicMock()):
-                import sys
-                with patch.dict(sys.modules, {"yaml": mock_yaml}):
-                    # Force reimport of the function to pick up yaml
-                    import importlib
-                    import server.pr_lookup as pr_mod
-                    # Directly test the function logic
-                    token = pr_mod._get_github_token()
+    with patch.dict(os.environ, {}, clear=True), patch("os.path.isfile", return_value=True):
+        with patch("builtins.open", MagicMock()):
+            import sys
+
+            with patch.dict(sys.modules, {"yaml": mock_yaml}):
+                # Force reimport of the function to pick up yaml
+                import server.pr_lookup as pr_mod
+
+                # Directly test the function logic
+                pr_mod._get_github_token()
 
 
 def test_get_github_token_gh_config_os_error():
     """Test gh config parsing when file read fails."""
-    with patch.dict(os.environ, {}, clear=True):
-        with patch("os.path.isfile", return_value=True):
-            with patch("builtins.open", side_effect=OSError("permission denied")):
-                # Should fall through to env vars and return None
-                token = _get_github_token()
-                assert token is None
+    with patch.dict(os.environ, {}, clear=True), patch("os.path.isfile", return_value=True):
+        with patch("builtins.open", side_effect=OSError("permission denied")):
+            # Should fall through to env vars and return None
+            token = _get_github_token()
+            assert token is None
 
 
 def test_get_client():
     """Test that _get_client returns a client."""
     import server.pr_lookup as pr_mod
+
     old = pr_mod._client
     pr_mod._client = None
     try:

@@ -2,7 +2,7 @@
 
 import json
 import os
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 
 import aiosqlite
 
@@ -106,7 +106,14 @@ async def _create_tables(db: aiosqlite.Connection):
     """)
 
     # Add columns that may not exist in older databases
-    for col, col_type in [("session_name", "TEXT"), ("effort_level", "TEXT"), ("ticket_id", "TEXT"), ("display_name", "TEXT"), ("display_name_locked", "INTEGER DEFAULT 0"), ("last_activity_preview", "TEXT")]:
+    for col, col_type in [
+        ("session_name", "TEXT"),
+        ("effort_level", "TEXT"),
+        ("ticket_id", "TEXT"),
+        ("display_name", "TEXT"),
+        ("display_name_locked", "INTEGER DEFAULT 0"),
+        ("last_activity_preview", "TEXT"),
+    ]:
         try:
             await db.execute(f"ALTER TABLE sessions ADD COLUMN {col} {col_type}")
         except Exception:
@@ -129,23 +136,23 @@ async def _create_tables(db: aiosqlite.Connection):
 
 # --- Session CRUD ---
 
+
 async def create_session(
     session_id: str,
     project_path: str | None = None,
     model: str | None = None,
     task_description: str | None = None,
-) -> dict:
+) -> dict | None:
     """Create a new session record."""
     db = await get_db()
-    now = datetime.now(timezone.utc).isoformat()
+    now = datetime.now(UTC).isoformat()
     project_name = os.path.basename(project_path) if project_path else None
 
     await db.execute(
         """INSERT INTO sessions (id, project_path, project_name, model,
            task_description, status, started_at, last_activity_at, created_at, updated_at)
            VALUES (?, ?, ?, ?, ?, 'idle', ?, ?, ?, ?)""",
-        (session_id, project_path, project_name, model,
-         task_description, now, now, now, now),
+        (session_id, project_path, project_name, model, task_description, now, now, now, now),
     )
     await db.commit()
     return await get_session(session_id)
@@ -157,13 +164,11 @@ async def update_session(session_id: str, **kwargs) -> dict | None:
     if not kwargs:
         return await get_session(session_id)
 
-    kwargs["updated_at"] = datetime.now(timezone.utc).isoformat()
+    kwargs["updated_at"] = datetime.now(UTC).isoformat()
     set_clause = ", ".join(f"{k} = ?" for k in kwargs)
     values = list(kwargs.values()) + [session_id]
 
-    await db.execute(
-        f"UPDATE sessions SET {set_clause} WHERE id = ?", values
-    )
+    await db.execute(f"UPDATE sessions SET {set_clause} WHERE id = ?", values)
     await db.commit()
     return await get_session(session_id)
 
@@ -224,6 +229,7 @@ async def get_completed_sessions(limit: int = 50, offset: int = 0) -> list[dict]
 
 # --- Events ---
 
+
 async def add_event(
     session_id: str,
     event_type: str,
@@ -239,7 +245,7 @@ async def add_event(
         (session_id, event_type, tool_name, payload_json),
     )
     await db.commit()
-    return cursor.lastrowid
+    return cursor.lastrowid or 0
 
 
 async def get_session_events(session_id: str, limit: int = 100) -> list[dict]:
@@ -258,6 +264,7 @@ async def get_session_events(session_id: str, limit: int = 100) -> list[dict]:
 
 # --- Transcripts ---
 
+
 async def add_transcript(
     session_id: str,
     role: str,
@@ -268,13 +275,13 @@ async def add_transcript(
 ) -> int:
     """Add a transcript entry and update FTS index."""
     db = await get_db()
-    ts = timestamp or datetime.now(timezone.utc).isoformat()
+    ts = timestamp or datetime.now(UTC).isoformat()
     cursor = await db.execute(
         """INSERT INTO transcripts (session_id, source_file, role, content, token_count, timestamp)
            VALUES (?, ?, ?, ?, ?, ?)""",
         (session_id, source_file, role, content, token_count, ts),
     )
-    rowid = cursor.lastrowid
+    rowid = cursor.lastrowid or 0
 
     # Update FTS index
     await db.execute(
@@ -285,9 +292,7 @@ async def add_transcript(
     return rowid
 
 
-async def get_session_transcripts(
-    session_id: str, limit: int = 200, offset: int = 0
-) -> list[dict]:
+async def get_session_transcripts(session_id: str, limit: int = 200, offset: int = 0) -> list[dict]:
     """Get the latest N transcripts for a session, returned in chronological order."""
     db = await get_db()
     # Subquery gets the latest `limit` rows, outer query re-orders ASC for display
@@ -322,6 +327,7 @@ async def search_transcripts(query: str, limit: int = 50) -> list[dict]:
 
 # --- Analytics ---
 
+
 async def get_analytics_summary() -> dict:
     """Get overall analytics summary."""
     db = await get_db()
@@ -337,7 +343,7 @@ async def get_analytics_summary() -> dict:
         FROM sessions
     """)
     row = await cursor.fetchone()
-    summary = dict(row)
+    summary = dict(row) if row else {}
 
     # Today's cost
     cursor = await db.execute("""
@@ -346,7 +352,8 @@ async def get_analytics_summary() -> dict:
         WHERE date(created_at) = date('now')
     """)
     today = await cursor.fetchone()
-    summary["today_cost"] = today["today_cost"]
+    if today:
+        summary["today_cost"] = today["today_cost"]
 
     return summary
 
@@ -372,6 +379,7 @@ async def get_analytics_daily(days: int = 30) -> list[dict]:
 
 
 # --- Settings ---
+
 
 async def get_setting(key: str) -> str | None:
     """Get a single setting value by key."""

@@ -1,11 +1,11 @@
 """Tests for the REST API endpoints."""
 
 import pytest
-from httpx import AsyncClient, ASGITransport
+from fastapi import FastAPI
+from httpx import ASGITransport, AsyncClient
 
 import server.db as db
 from server.routes.api import router
-from fastapi import FastAPI
 
 # Create a test app with just the API router
 test_app = FastAPI()
@@ -84,12 +84,15 @@ async def test_get_transcript_not_found(client: AsyncClient):
 
 
 async def test_receive_hook(client: AsyncClient):
-    resp = await client.post("/api/hooks", json={
-        "event_type": "SessionStart",
-        "session_id": "hook-1",
-        "cwd": "/tmp/myproject",
-        "model": "opus",
-    })
+    resp = await client.post(
+        "/api/hooks",
+        json={
+            "event_type": "SessionStart",
+            "session_id": "hook-1",
+            "cwd": "/tmp/myproject",
+            "model": "opus",
+        },
+    )
     assert resp.status_code == 200
     data = resp.json()
     assert data["status"] == "ok"
@@ -97,9 +100,12 @@ async def test_receive_hook(client: AsyncClient):
 
 
 async def test_receive_hook_no_session_id(client: AsyncClient):
-    resp = await client.post("/api/hooks", json={
-        "event_type": "SessionStart",
-    })
+    resp = await client.post(
+        "/api/hooks",
+        json={
+            "event_type": "SessionStart",
+        },
+    )
     assert resp.status_code == 200
     assert resp.json()["status"] == "ignored"
 
@@ -159,10 +165,13 @@ async def test_get_settings_empty(client: AsyncClient):
 
 
 async def test_update_settings(client: AsyncClient):
-    resp = await client.put("/api/settings", json={
-        "jira_project_keys": ["PROJ", "DEV"],
-        "jira_server_url": "https://jira.example.com",
-    })
+    resp = await client.put(
+        "/api/settings",
+        json={
+            "jira_project_keys": ["PROJ", "DEV"],
+            "jira_server_url": "https://jira.example.com",
+        },
+    )
     assert resp.status_code == 200
     settings = resp.json()["settings"]
     assert settings["jira_project_keys"] == ["PROJ", "DEV"]
@@ -206,7 +215,9 @@ async def test_patch_session_no_updates(client: AsyncClient):
 
 
 async def test_browse_directory(client: AsyncClient):
-    import tempfile, os
+    import os
+    import tempfile
+
     with tempfile.TemporaryDirectory() as d:
         os.makedirs(os.path.join(d, "subdir"))
         with open(os.path.join(d, "file.txt"), "w") as f:
@@ -222,7 +233,9 @@ async def test_browse_directory(client: AsyncClient):
 
 
 async def test_browse_hidden_files_excluded(client: AsyncClient):
-    import tempfile, os
+    import os
+    import tempfile
+
     with tempfile.TemporaryDirectory() as d:
         os.makedirs(os.path.join(d, ".hidden"))
         os.makedirs(os.path.join(d, "visible"))
@@ -240,17 +253,20 @@ async def test_browse_invalid_path(client: AsyncClient):
 
 async def test_browse_permission_denied(client: AsyncClient):
     from unittest.mock import patch
-    with patch("os.listdir", side_effect=PermissionError):
-        with patch("os.path.isdir", return_value=True):
-            resp = await client.get("/api/browse?path=/root")
-            assert resp.status_code == 403
+
+    with patch("os.listdir", side_effect=PermissionError), patch("os.path.isdir", return_value=True):
+        resp = await client.get("/api/browse?path=/root")
+        assert resp.status_code == 403
 
 
 async def test_new_session_disabled(client: AsyncClient):
-    resp = await client.post("/api/sessions/new", json={
-        "project_dir": "/tmp/proj",
-        "prompt": "hello",
-    })
+    resp = await client.post(
+        "/api/sessions/new",
+        json={
+            "project_dir": "/tmp/proj",
+            "prompt": "hello",
+        },
+    )
     assert resp.status_code == 501
 
 
@@ -271,7 +287,8 @@ async def test_patch_session_unlock(client: AsyncClient):
 
 async def test_stop_session_api(client: AsyncClient):
     await db.create_session("stop-1")
-    from unittest.mock import patch, AsyncMock
+    from unittest.mock import AsyncMock, patch
+
     with patch("server.terminal.stop_session", new_callable=AsyncMock):
         resp = await client.post("/api/sessions/stop-1/stop")
         assert resp.status_code == 200
@@ -285,7 +302,8 @@ async def test_stop_session_not_found(client: AsyncClient):
 
 async def test_stop_session_error(client: AsyncClient):
     await db.create_session("stop-err")
-    from unittest.mock import patch, AsyncMock
+    from unittest.mock import AsyncMock, patch
+
     with patch("server.terminal.stop_session", new_callable=AsyncMock, side_effect=Exception("tmux error")):
         resp = await client.post("/api/sessions/stop-err/stop")
         assert resp.status_code == 500
