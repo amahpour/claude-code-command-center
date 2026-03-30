@@ -416,6 +416,9 @@ async def _process_file_changes(file_path: str):
         await db.create_session(session_id, project_path=str(Path(file_path).parent))
         if parent_id:
             await db.update_session(session_id, parent_session_id=parent_id, status="working")
+    elif parent_id and not session.get("parent_session_id"):
+        # Fix orphaned subagent: file path shows it's a subagent but DB is missing the link
+        await db.update_session(session_id, parent_session_id=parent_id)
 
     # Track latest usage from new entries (not cumulative — use most recent snapshot)
     latest_input = 0
@@ -473,10 +476,18 @@ async def _process_file_changes(file_path: str):
     # Enrich session with discovered metadata
     # Always update last_activity_at when new entries arrive
     session_updates: dict = {"last_activity_at": datetime.now(UTC).isoformat()}
-    # If session was stale but new entries are coming in, mark it active again
+    # Infer status from entry content (fallback when hooks aren't reaching the server)
     session = await db.get_session(session_id)
-    if session and session.get("status") == "stale":
-        session_updates["status"] = "idle"
+    has_tool_activity = any(
+        e.get("role") == "assistant" and e.get("content") and "[Tool:" in e["content"] for e in parsed_entries
+    )
+    if session:
+        if session.get("status") == "stale":
+            # Stale but new entries arriving — revive
+            session_updates["status"] = "working" if has_tool_activity else "idle"
+        elif has_tool_activity and session.get("status") in ("idle", None):
+            # Tool calls detected — session is actively working
+            session_updates["status"] = "working"
     if model:
         session_updates["model"] = model
     if slug:
@@ -490,10 +501,13 @@ async def _process_file_changes(file_path: str):
             session_updates["task_description"] = first_user_message
     if git_branch:
         session_updates["git_branch"] = git_branch
-        ticket_id = await _extract_ticket_id(git_branch)
-        if ticket_id:
-            session = session or await db.get_session(session_id)
-            if not (session and session.get("ticket_id")):
+    # Extract ticket from branch — use newly-seen branch or existing one from DB
+    effective_branch = git_branch or (session.get("git_branch") if session else None)
+    if effective_branch:
+        session = session or await db.get_session(session_id)
+        if not (session and session.get("ticket_id")):
+            ticket_id = await _extract_ticket_id(effective_branch)
+            if ticket_id:
                 session_updates["ticket_id"] = ticket_id
     if cwd:
         session_updates["project_path"] = cwd
@@ -546,6 +560,21 @@ async def _process_file_changes(file_path: str):
             updated = await db.get_session(session_id)
             if updated:
                 await broadcast_session_update(updated)
+                # If this is a subagent, also keep the parent session alive
+                pid = updated.get("parent_session_id")
+                if pid:
+                    parent = await db.get_session(pid)
+                    if parent and parent.get("status") in ("stale", "idle"):
+                        await db.update_session(
+                            pid,
+                            last_activity_at=datetime.now(UTC).isoformat(),
+                            status="working",
+                        )
+                        parent = await db.get_session(pid)
+                        if parent:
+                            subagents = await db.get_subagents_for_session(pid)
+                            parent["subagents"] = subagents
+                            await broadcast_session_update(parent)
         except Exception:
             pass  # Non-critical
 

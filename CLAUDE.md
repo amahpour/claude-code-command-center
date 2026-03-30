@@ -12,7 +12,7 @@ Web-based dashboard for monitoring and managing multiple Claude Code sessions.
 ## Running
 ```bash
 source .venv/bin/activate
-uvicorn server.main:app --port 3000 --reload
+uvicorn server.main:app --port 4700 --reload
 ```
 
 ## Testing

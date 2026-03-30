@@ -1638,14 +1638,28 @@ body {
 
 .history-table tbody tr:hover { background: var(--surface-3); }
 
-/* ---- Transcript Detail View ---- */
-.transcript-container { max-width: 800px; margin: 0 auto; }
+/* ---- Transcript Detail View (History tab) ---- */
+#transcript-view {
+  display: flex;
+  flex-direction: column;
+  height: calc(100vh - 120px);
+}
+
+#transcript-view .transcript-header {
+  flex-shrink: 0;
+}
+
+#transcript-view .transcript-live {
+  flex: 1;
+  min-height: 0;
+}
 
 .transcript-header {
   display: flex;
   align-items: center;
   gap: 12px;
-  margin-bottom: 20px;
+  margin-bottom: 12px;
+  padding: 0 4px;
 }
 
 .transcript-message {

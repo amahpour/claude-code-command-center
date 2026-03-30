@@ -184,11 +184,15 @@ async def get_session(session_id: str) -> dict | None:
 
 
 async def get_all_active_sessions() -> list[dict]:
-    """Get all non-completed parent sessions (no subagents), sorted by status priority."""
+    """Get actively running parent sessions for the dashboard.
+
+    Excludes completed, stale, and subagent sessions — the dashboard
+    is a live command center showing only what's actually running.
+    """
     db = await get_db()
     cursor = await db.execute("""
         SELECT * FROM sessions
-        WHERE status != 'completed'
+        WHERE status NOT IN ('completed', 'stale')
           AND parent_session_id IS NULL
           AND id NOT LIKE 'agent-%'
         ORDER BY
@@ -196,7 +200,6 @@ async def get_all_active_sessions() -> list[dict]:
                 WHEN 'waiting' THEN 1
                 WHEN 'working' THEN 2
                 WHEN 'idle' THEN 3
-                WHEN 'stale' THEN 4
                 ELSE 5
             END,
             last_activity_at DESC
@@ -214,6 +217,14 @@ async def get_subagents_for_session(parent_id: str) -> list[dict]:
            ORDER BY started_at ASC""",
         (parent_id,),
     )
+    rows = await cursor.fetchall()
+    return [dict(r) for r in rows]
+
+
+async def get_working_subagents() -> list[dict]:
+    """Get all subagent sessions that are still marked as working."""
+    db = await get_db()
+    cursor = await db.execute("SELECT * FROM sessions WHERE parent_session_id IS NOT NULL AND status = 'working'")
     rows = await cursor.fetchall()
     return [dict(r) for r in rows]
 
@@ -329,19 +340,34 @@ async def add_transcript(
     return rowid
 
 
-async def get_session_transcripts(session_id: str, limit: int = 200, offset: int = 0) -> list[dict]:
-    """Get the latest N transcripts for a session, returned in chronological order."""
+async def get_session_transcripts(
+    session_id: str, limit: int = 200, offset: int = 0, after_id: int | None = None
+) -> list[dict]:
+    """Get transcripts for a session, returned in chronological order.
+
+    If after_id is provided, returns only transcripts with id > after_id (for incremental updates).
+    Otherwise returns the latest `limit` rows (for initial load).
+    """
     db = await get_db()
-    # Subquery gets the latest `limit` rows, outer query re-orders ASC for display
-    cursor = await db.execute(
-        """SELECT * FROM (
-               SELECT * FROM transcripts
-               WHERE session_id = ?
-               ORDER BY id DESC
-               LIMIT ? OFFSET ?
-           ) sub ORDER BY id ASC""",
-        (session_id, limit, offset),
-    )
+    if after_id is not None:
+        cursor = await db.execute(
+            """SELECT * FROM transcripts
+               WHERE session_id = ? AND id > ?
+               ORDER BY id ASC
+               LIMIT ?""",
+            (session_id, after_id, limit),
+        )
+    else:
+        # Subquery gets the latest `limit` rows, outer query re-orders ASC for display
+        cursor = await db.execute(
+            """SELECT * FROM (
+                   SELECT * FROM transcripts
+                   WHERE session_id = ?
+                   ORDER BY id DESC
+                   LIMIT ? OFFSET ?
+               ) sub ORDER BY id ASC""",
+            (session_id, limit, offset),
+        )
     rows = await cursor.fetchall()
     return [dict(r) for r in rows]
 

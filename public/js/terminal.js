@@ -1,18 +1,15 @@
 /**
- * Terminal / Session Viewer
+ * Session Viewer — Live Transcript Display
  *
- * When a session was launched via the Command Center (tmux), shows an interactive terminal.
- * For all other sessions, shows a live transcript that auto-updates.
+ * Shows a live-updating transcript when clicking a session card.
+ * Uses incremental fetching (after_id) to append new messages
+ * without re-rendering the entire DOM.
  */
 
 const SessionViewer = {
-  ws: null,
-  term: null,
-  fitAddon: null,
   currentSessionId: null,
   _pollInterval: null,
-  _lastTranscriptCount: 0,
-  _mode: null, // 'terminal' or 'transcript'
+  _lastTranscriptId: 0,
 
   open(sessionId, title) {
     this.currentSessionId = sessionId;
@@ -23,92 +20,10 @@ const SessionViewer = {
     overlay.style.display = 'flex';
 
     this._cleanup();
-
-    // Try terminal first, fall back to transcript
-    this._tryTerminal(sessionId);
-  },
-
-  _tryTerminal(sessionId) {
-    const proto = location.protocol === 'https:' ? 'wss:' : 'ws:';
-    const url = `${proto}//${location.host}/ws/terminal/${sessionId}`;
-
-    this.ws = new WebSocket(url);
-    let gotError = false;
-
-    this.ws.onmessage = (event) => {
-      if (typeof event.data === 'string') {
-        try {
-          const msg = JSON.parse(event.data);
-          if (msg.type === 'error') {
-            gotError = true;
-            this.ws.close();
-            // Fall back to transcript view
-            this._showTranscript(sessionId);
-            return;
-          }
-          if (msg.type === 'pong') return;
-        } catch {
-          // Not JSON — real terminal data
-          if (!this.term) this._initXterm();
-          this.term.write(event.data);
-        }
-      } else if (event.data instanceof Blob) {
-        if (!this.term) this._initXterm();
-        event.data.arrayBuffer().then(buf => {
-          this.term.write(new Uint8Array(buf));
-        });
-      }
-    };
-
-    this.ws.onopen = () => {
-      // Wait for first message to determine mode
-    };
-
-    this.ws.onclose = () => {
-      if (!gotError && this.term) {
-        this.term.writeln('\x1b[2m--- Disconnected ---\x1b[0m');
-      }
-    };
-
-    this.ws.onerror = () => {
-      this._showTranscript(sessionId);
-    };
-  },
-
-  _initXterm() {
-    this._mode = 'terminal';
-    const container = document.getElementById('terminal-container');
-    container.innerHTML = '';
-
-    this.term = new window.Terminal({
-      cursorBlink: true,
-      fontSize: 14,
-      fontFamily: "'SF Mono', 'Fira Code', 'Cascadia Code', monospace",
-      theme: {
-        background: '#0f0f1a',
-        foreground: '#e0e0e0',
-        cursor: '#7c3aed',
-        selectionBackground: 'rgba(124, 58, 237, 0.3)',
-      },
-    });
-
-    this.fitAddon = new window.FitAddon.FitAddon();
-    this.term.loadAddon(this.fitAddon);
-    this.term.open(container);
-    this.fitAddon.fit();
-
-    this._resizeHandler = () => { if (this.fitAddon) this.fitAddon.fit(); };
-    window.addEventListener('resize', this._resizeHandler);
-
-    this.term.onData((data) => {
-      if (this.ws && this.ws.readyState === WebSocket.OPEN) {
-        this.ws.send(data);
-      }
-    });
+    this._showTranscript(sessionId);
   },
 
   async _showTranscript(sessionId) {
-    this._mode = 'transcript';
     const container = document.getElementById('terminal-container');
     container.innerHTML = `
       <div class="transcript-live" id="transcript-live">
@@ -118,34 +33,47 @@ const SessionViewer = {
     `;
 
     this._lastTranscriptId = 0;
-    await this._fetchTranscript(sessionId);
+    await this._fetchTranscript(sessionId, true);
 
     // Poll for new transcript entries every 2 seconds
     this._pollInterval = setInterval(() => {
-      this._fetchTranscript(sessionId);
+      this._fetchTranscript(sessionId, false);
     }, 2000);
   },
 
-  async _fetchTranscript(sessionId) {
+  async _fetchTranscript(sessionId, isInitial) {
     try {
-      const resp = await fetch(`/api/sessions/${sessionId}/transcript?limit=1000`);
+      const url = isInitial
+        ? `/api/sessions/${sessionId}/transcript?limit=1000`
+        : `/api/sessions/${sessionId}/transcript?after_id=${this._lastTranscriptId}&limit=200`;
+
+      const resp = await fetch(url);
       const data = await resp.json();
       const transcripts = data.transcripts || [];
 
-      // Detect changes by comparing last entry's ID
-      const lastId = transcripts.length > 0 ? transcripts[transcripts.length - 1].id : 0;
-      if (lastId === this._lastTranscriptId) return;
+      if (transcripts.length === 0) return;
+
+      const lastId = transcripts[transcripts.length - 1].id;
       this._lastTranscriptId = lastId;
 
       const container = document.getElementById('transcript-live-messages');
       if (!container) return;
 
-      const planGroups = this._detectPlanGroups(transcripts);
-      const agentGroups = this._detectAgentGroups(transcripts);
-      container.innerHTML = this._renderTranscriptWithGroups(transcripts, planGroups, agentGroups);
-
-      // Auto-scroll to bottom
-      container.scrollTop = container.scrollHeight;
+      if (isInitial) {
+        // Full render for initial load (supports plan/agent grouping)
+        const planGroups = this._detectPlanGroups(transcripts);
+        const agentGroups = this._detectAgentGroups(transcripts);
+        container.innerHTML = this._renderTranscriptWithGroups(transcripts, planGroups, agentGroups);
+        container.scrollTop = container.scrollHeight;
+      } else {
+        // Incremental: append only new messages without touching existing DOM
+        const wasAtBottom = container.scrollHeight - container.scrollTop - container.clientHeight < 50;
+        const html = transcripts.map(t => this._renderMessage(t)).join('');
+        container.insertAdjacentHTML('beforeend', html);
+        if (wasAtBottom) {
+          container.scrollTop = container.scrollHeight;
+        }
+      }
     } catch (e) {
       console.error('Failed to fetch transcript:', e);
     }
@@ -159,18 +87,10 @@ const SessionViewer = {
   },
 
   _cleanup() {
-    if (this.ws) { this.ws.close(); this.ws = null; }
-    if (this.term) { this.term.dispose(); this.term = null; }
-    if (this.fitAddon) { this.fitAddon = null; }
-    if (this._resizeHandler) {
-      window.removeEventListener('resize', this._resizeHandler);
-      this._resizeHandler = null;
-    }
     if (this._pollInterval) {
       clearInterval(this._pollInterval);
       this._pollInterval = null;
     }
-    this._mode = null;
     this._lastTranscriptId = 0;
     const container = document.getElementById('terminal-container');
     if (container) container.innerHTML = '';
@@ -220,7 +140,6 @@ const SessionViewer = {
         const toolItems = toolBlocks.map(b => {
           const content = b.lines.join('\n').trim();
           const preview = this._toolPreview(b.name, content);
-          const uid = Math.random().toString(36).slice(2, 8);
           return `
             <div class="tool-item" onclick="this.classList.toggle('expanded')">
               <div class="tool-item-header">
@@ -247,7 +166,6 @@ const SessionViewer = {
 
     // Tool results — collapsible
     if (role === 'tool_result') {
-      const uid = Math.random().toString(36).slice(2, 8);
       const firstLine = raw.split('\n')[0].substring(0, 120);
       return `
         <div class="tool-result-block" onclick="this.classList.toggle('expanded')">
@@ -317,7 +235,6 @@ const SessionViewer = {
       const content = t.content || '';
 
       if (!current) {
-        // Look for EnterPlanMode in assistant messages
         if (t.role === 'assistant' && content.includes('[Tool: EnterPlanMode]')) {
           current = {
             startIndex: i,
@@ -331,7 +248,6 @@ const SessionViewer = {
       } else {
         current.memberIndices.push(i);
 
-        // Check for plan file Write
         if (t.role === 'assistant' && content.includes('[Tool: Write]')) {
           const extracted = this._extractPlanContent(content);
           if (extracted) {
@@ -340,7 +256,6 @@ const SessionViewer = {
           }
         }
 
-        // Check for ExitPlanMode
         if (t.role === 'assistant' && content.includes('[Tool: ExitPlanMode]')) {
           current.endIndex = i;
           current.status = 'approved';
@@ -350,7 +265,6 @@ const SessionViewer = {
       }
     }
 
-    // Plan still in progress (no ExitPlanMode yet)
     if (current) {
       current.endIndex = transcripts.length - 1;
       groups.push(current);
@@ -360,7 +274,6 @@ const SessionViewer = {
   },
 
   _extractPlanContent(content) {
-    // Find the Write tool block that targets a plans directory
     const lines = content.split('\n');
     let inWriteBlock = false;
     let filePath = null;
@@ -374,7 +287,6 @@ const SessionViewer = {
         continue;
       }
       if (line.match(/^\[Tool: .+\]$/)) {
-        // Hit a different tool block — if we found a plan, stop
         if (inWriteBlock && filePath) break;
         inWriteBlock = false;
         continue;
@@ -385,7 +297,7 @@ const SessionViewer = {
           if (trimmed.includes('.claude/plans/') && trimmed.endsWith('.md')) {
             filePath = trimmed;
           } else {
-            inWriteBlock = false; // Not a plan write
+            inWriteBlock = false;
           }
         } else {
           planLines.push(line);
@@ -404,11 +316,8 @@ const SessionViewer = {
     for (let i = 0; i < transcripts.length; i++) {
       const t = transcripts[i];
       if (t.role !== 'assistant' || !t.content) continue;
-
-      // Check for standalone [Tool: Agent] call
       if (!t.content.includes('[Tool: Agent]')) continue;
 
-      // Extract prompt from the Agent tool block
       const lines = t.content.split('\n');
       const toolIdx = lines.findIndex(l => l.trim() === '[Tool: Agent]');
       if (toolIdx < 0) continue;
@@ -420,7 +329,6 @@ const SessionViewer = {
       }
       const prompt = promptLines.join('\n').trim();
 
-      // Look for the corresponding tool_result with agentId
       let agentId = null;
       let agentType = null;
       let resultSummary = '';
@@ -438,10 +346,9 @@ const SessionViewer = {
               break;
             }
           } catch {
-            // Not JSON or not an agent result — check next
+            // Not JSON or not an agent result
           }
         }
-        // If we hit another assistant message, stop looking
         if (r.role === 'assistant') break;
       }
 
@@ -466,7 +373,6 @@ const SessionViewer = {
     const time = group.timestamp ? this._fmtTime(group.timestamp) : '';
     const uid = Math.random().toString(36).slice(2, 8);
     const promptPreview = group.prompt.split('\n')[0].substring(0, 100);
-    const status = group.agentId ? 'completed' : 'pending';
 
     let transcriptSection = '';
     if (group.agentId) {
@@ -525,7 +431,6 @@ const SessionViewer = {
       return transcripts.map(t => this._renderMessage(t)).join('');
     }
 
-    // Build membership lookup: index -> { type, groupIdx }
     const memberOf = {};
     for (let g = 0; g < planGroups.length; g++) {
       for (const idx of planGroups[g].memberIndices) {
@@ -561,11 +466,6 @@ const SessionViewer = {
     return parts.join('');
   },
 
-  // Legacy name kept for backward compat
-  _renderTranscriptWithPlans(transcripts, planGroups) {
-    return this._renderTranscriptWithGroups(transcripts, planGroups, []);
-  },
-
   _renderPlanBlock(group, transcripts) {
     const statusClass = group.status === 'approved' ? 'approved' : 'in-progress';
     const statusLabel = group.status === 'approved' ? 'Approved' : 'In Progress';
@@ -574,12 +474,10 @@ const SessionViewer = {
     const fileDisplay = group.planFilePath
       ? group.planFilePath.replace(/^.*\.claude\/plans\//, '') : '';
 
-    // Render plan content as markdown
     const planHtml = group.planContent
       ? this._fmtText(group.planContent)
       : '<em style="color: var(--text-dim)">No plan content found</em>';
 
-    // Render raw tool calls for the expandable section
     const rawHtml = group.memberIndices
       .map(idx => this._renderMessage(transcripts[idx]))
       .join('');
@@ -615,14 +513,13 @@ const SessionViewer = {
   },
 };
 
-// Keep backward compat — dashboard.js calls Terminal.open()
+// Backward compat — dashboard.js calls Terminal.open()
 const Terminal = SessionViewer;
 
-// Wire up buttons
+// Wire up back button
 document.addEventListener('DOMContentLoaded', () => {
   document.getElementById('terminal-back').addEventListener('click', () => {
     SessionViewer.close();
     window.history.back();
   });
-
 });

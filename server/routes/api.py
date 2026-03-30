@@ -84,12 +84,16 @@ async def get_transcript(
     session_id: str,
     limit: int = Query(200, ge=1, le=1000),
     offset: int = Query(0, ge=0),
+    after_id: int | None = Query(None, ge=0),
 ):
-    """Get the full transcript for a session."""
+    """Get the transcript for a session.
+
+    Use after_id for incremental updates (returns only entries with id > after_id).
+    """
     session = await db.get_session(session_id)
     if not session:
         raise HTTPException(status_code=404, detail="Session not found")
-    transcripts = await db.get_session_transcripts(session_id, limit=limit, offset=offset)
+    transcripts = await db.get_session_transcripts(session_id, limit=limit, offset=offset, after_id=after_id)
     return {"session_id": session_id, "transcripts": transcripts}
 
 
@@ -208,19 +212,3 @@ async def new_session(req: NewSessionRequest):
         status_code=501,
         detail="New Session launching is temporarily disabled. Start Claude Code from your terminal instead — it will appear on the dashboard automatically via hooks.",
     )
-
-
-@router.post("/sessions/{session_id}/stop")
-async def stop_session(session_id: str):
-    """Stop a running session."""
-    session = await db.get_session(session_id)
-    if not session:
-        raise HTTPException(status_code=404, detail="Session not found")
-    from server.terminal import stop_session as terminal_stop
-
-    try:
-        await terminal_stop(session_id)
-        await db.update_session(session_id, status="completed")
-        return {"status": "ok"}
-    except Exception as e:
-        raise HTTPException(status_code=500, detail=str(e)) from e

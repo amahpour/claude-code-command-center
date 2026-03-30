@@ -1324,3 +1324,40 @@ async def test_process_file_skips_system_looking_content():
         assert session["task_description"] == "This is a real task for the session"
     finally:
         os.unlink(tmp_path)
+
+
+async def test_process_file_fixes_orphaned_subagent():
+    """Watcher should set parent_session_id on existing sessions that lack it."""
+    # Create a subagent session without parent_session_id (simulates orphaned state)
+    await db.create_session("agent-orphan-1")
+    session = await db.get_session("agent-orphan-1")
+    assert session["parent_session_id"] is None
+
+    # Create a JSONL file at a subagent path (parent/subagents/agent-orphan-1.jsonl)
+    parent_dir = tempfile.mkdtemp()
+    subagent_dir = os.path.join(parent_dir, "parent-sess-1", "subagents")
+    os.makedirs(subagent_dir)
+    jsonl_path = os.path.join(subagent_dir, "agent-orphan-1.jsonl")
+    with open(jsonl_path, "w") as f:
+        f.write(
+            json.dumps(
+                {
+                    "type": "assistant",
+                    "message": {"role": "assistant", "content": "Working on it"},
+                    "timestamp": "2026-03-30T12:00:00Z",
+                }
+            )
+            + "\n"
+        )
+
+    try:
+        with patch("server.routes.ws.broadcast_session_update", new_callable=AsyncMock):
+            await _process_file_changes(jsonl_path)
+
+        # Verify parent_session_id was fixed
+        session = await db.get_session("agent-orphan-1")
+        assert session["parent_session_id"] == "parent-sess-1"
+    finally:
+        import shutil
+
+        shutil.rmtree(parent_dir)

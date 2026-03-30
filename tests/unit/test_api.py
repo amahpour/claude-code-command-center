@@ -78,6 +78,26 @@ async def test_get_transcript(client: AsyncClient):
     assert len(data["transcripts"]) == 2
 
 
+async def test_get_transcript_after_id(client: AsyncClient):
+    await db.create_session("t-after")
+    id1 = await db.add_transcript("t-after", "user", "First")
+    await db.add_transcript("t-after", "assistant", "Second")
+    id3 = await db.add_transcript("t-after", "user", "Third")
+
+    # Fetch only entries after id1
+    resp = await client.get(f"/api/sessions/t-after/transcript?after_id={id1}")
+    assert resp.status_code == 200
+    data = resp.json()
+    assert len(data["transcripts"]) == 2
+    assert data["transcripts"][0]["content"] == "Second"
+    assert data["transcripts"][1]["content"] == "Third"
+
+    # Fetch after the last entry — should return nothing
+    resp = await client.get(f"/api/sessions/t-after/transcript?after_id={id3}")
+    assert resp.status_code == 200
+    assert len(resp.json()["transcripts"]) == 0
+
+
 async def test_get_transcript_not_found(client: AsyncClient):
     resp = await client.get("/api/sessions/nonexistent/transcript")
     assert resp.status_code == 404
@@ -283,30 +303,6 @@ async def test_patch_session_unlock(client: AsyncClient):
     resp = await client.patch("/api/sessions/lock-2", json={"display_name_locked": False})
     assert resp.status_code == 200
     assert resp.json()["session"]["display_name_locked"] == 0
-
-
-async def test_stop_session_api(client: AsyncClient):
-    await db.create_session("stop-1")
-    from unittest.mock import AsyncMock, patch
-
-    with patch("server.terminal.stop_session", new_callable=AsyncMock):
-        resp = await client.post("/api/sessions/stop-1/stop")
-        assert resp.status_code == 200
-        assert resp.json()["status"] == "ok"
-
-
-async def test_stop_session_not_found(client: AsyncClient):
-    resp = await client.post("/api/sessions/nonexistent/stop")
-    assert resp.status_code == 404
-
-
-async def test_stop_session_error(client: AsyncClient):
-    await db.create_session("stop-err")
-    from unittest.mock import AsyncMock, patch
-
-    with patch("server.terminal.stop_session", new_callable=AsyncMock, side_effect=Exception("tmux error")):
-        resp = await client.post("/api/sessions/stop-err/stop")
-        assert resp.status_code == 500
 
 
 async def test_list_sessions_includes_subagents(client: AsyncClient):

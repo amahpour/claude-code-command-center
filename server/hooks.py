@@ -210,15 +210,55 @@ async def process_hook_event(event_data: dict) -> dict | None:
     return session
 
 
+async def _check_stale_subagents(now: datetime):
+    """Mark subagents as completed if they've been inactive for 5 minutes.
+
+    Subagents have a clear lifecycle — if they stop receiving activity
+    they're done, not "stale". This covers the case where SubagentStop
+    hooks fail to reach the server (e.g., port mismatch).
+    """
+    working_subs = await db.get_working_subagents()
+    for sub in working_subs:
+        last_activity = sub.get("last_activity_at")
+        if not last_activity:
+            continue
+        try:
+            last_dt = datetime.fromisoformat(last_activity.replace("Z", "+00:00"))
+            if last_dt.tzinfo is None:
+                last_dt = last_dt.replace(tzinfo=UTC)
+            if (now - last_dt).total_seconds() > 300:
+                await db.update_session(
+                    sub["id"],
+                    status="completed",
+                    ended_at=now.isoformat(),
+                )
+                # Broadcast parent update so tile refreshes
+                parent = await db.get_session(sub["parent_session_id"])
+                if parent:
+                    subagents = await db.get_subagents_for_session(parent["id"])
+                    parent["subagents"] = subagents
+                    await _notify_update(parent)
+        except (ValueError, TypeError):
+            pass
+
+
 async def _check_stale_sessions():
     """Background task that marks inactive sessions as stale."""
     while True:
         try:
             await asyncio.sleep(60)
-            sessions = await db.get_all_active_sessions()
             now = datetime.now(UTC)
+
+            # Also check subagent sessions — mark stale subagents as completed
+            await _check_stale_subagents(now)
+
+            sessions = await db.get_all_active_sessions()
             for session in sessions:
                 if session["status"] in ("completed", "stale"):
+                    continue
+                # Skip if any subagent is still actively working
+                subagents = await db.get_subagents_for_session(session["id"])
+                if any(s.get("status") == "working" for s in subagents):
                     continue
                 last_activity = session.get("last_activity_at")
                 if not last_activity:

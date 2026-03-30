@@ -51,15 +51,15 @@ pip install .
 bash scripts/setup.sh
 
 # Start the server
-uvicorn server.main:app --port 3000
+uvicorn server.main:app --port 4700
 ```
 
-Then open **http://localhost:3000** in your browser.
+Then open **http://localhost:4700** in your browser.
 
 ## Architecture
 
 ```
-Browser (localhost:3000)
+Browser (localhost:4700)
   |
   |-- REST API (/api/*)      -- Sessions, history, search, analytics
   |-- WebSocket (/ws/*)      -- Real-time dashboard updates
@@ -122,7 +122,7 @@ source .venv/bin/activate
 pytest
 
 # Run with auto-reload
-uvicorn server.main:app --port 3000 --reload
+uvicorn server.main:app --port 4700 --reload
 ```
 
 ## Uninstalling
