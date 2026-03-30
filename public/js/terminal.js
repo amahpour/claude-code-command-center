@@ -487,7 +487,7 @@ const SessionViewer = {
           <span class="transcript-live-time">${time}</span>
         </div>
         <div class="agent-block-prompt">${this._escapeHTML(promptPreview)}</div>
-        ${group.resultSummary ? `<div class="agent-block-result">${this._fmtText(group.resultSummary.substring(0, 500))}</div>` : ''}
+        ${group.resultSummary ? `<div class="agent-block-result">${this._fmtText(String(group.resultSummary).substring(0, 500))}</div>` : ''}
         ${transcriptSection}
       </div>`;
   },
