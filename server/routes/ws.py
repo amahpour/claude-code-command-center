@@ -42,9 +42,13 @@ async def dashboard_ws(websocket: WebSocket):
 
     try:
         # Send initial state
-        from server.db import get_all_active_sessions
+        from server.db import get_all_active_sessions, get_subagents_by_parent
 
         sessions = await get_all_active_sessions()
+        parent_ids = [s["id"] for s in sessions]
+        subagents_map = await get_subagents_by_parent(parent_ids)
+        for s in sessions:
+            s["subagents"] = subagents_map.get(s["id"], [])
         await websocket.send_text(
             json.dumps(
                 {

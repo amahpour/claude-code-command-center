@@ -659,6 +659,107 @@ async def test_check_stale_notifies_on_update():
         set_update_callback(None)
 
 
+async def test_subagent_start_creates_linked_session():
+    """SubagentStart with agent_id creates a subagent session linked to parent."""
+    await process_hook_event(
+        {
+            "event_type": "SessionStart",
+            "session_id": "parent-link-1",
+            "cwd": "/tmp/test",
+        }
+    )
+    result = await process_hook_event(
+        {
+            "event_type": "SubagentStart",
+            "session_id": "parent-link-1",
+            "agent_id": "sub-link-1",
+            "agent_type": "codegen",
+        }
+    )
+    assert result is not None
+
+    subagent = await db.get_session("sub-link-1")
+    assert subagent is not None
+    assert subagent["parent_session_id"] == "parent-link-1"
+    assert subagent["agent_type"] == "codegen"
+    assert subagent["status"] == "working"
+
+
+async def test_subagent_stop_completes_subagent():
+    """SubagentStop marks the subagent as completed and sets task_description."""
+    await process_hook_event(
+        {
+            "event_type": "SessionStart",
+            "session_id": "parent-stop-1",
+            "cwd": "/tmp/test",
+        }
+    )
+    await process_hook_event(
+        {
+            "event_type": "SubagentStart",
+            "session_id": "parent-stop-1",
+            "agent_id": "sub-stop-1",
+            "agent_type": "research",
+        }
+    )
+    await process_hook_event(
+        {
+            "event_type": "SubagentStop",
+            "session_id": "parent-stop-1",
+            "agent_id": "sub-stop-1",
+            "last_assistant_message": "Finished analyzing the codebase",
+        }
+    )
+
+    subagent = await db.get_session("sub-stop-1")
+    assert subagent is not None
+    assert subagent["status"] == "completed"
+    assert subagent["ended_at"] is not None
+    assert subagent["task_description"] == "Finished analyzing the codebase"
+
+
+async def test_subagent_start_broadcasts_parent_with_subagents():
+    """SubagentStart notifies callback with parent session including subagents array."""
+    from server.hooks import set_update_callback
+
+    callback = AsyncMock()
+    set_update_callback(callback)
+
+    try:
+        await process_hook_event(
+            {
+                "event_type": "SessionStart",
+                "session_id": "parent-bc-1",
+                "cwd": "/tmp/test",
+            }
+        )
+        callback.reset_mock()
+
+        await process_hook_event(
+            {
+                "event_type": "SubagentStart",
+                "session_id": "parent-bc-1",
+                "agent_id": "sub-bc-1",
+                "agent_type": "codegen",
+            }
+        )
+
+        # The callback should have been called with the parent session
+        assert callback.call_count >= 1
+        # Find the call that includes subagents (the parent broadcast)
+        parent_broadcast = None
+        for call in callback.call_args_list:
+            session_arg = call[0][0]
+            if session_arg.get("id") == "parent-bc-1" and "subagents" in session_arg:
+                parent_broadcast = session_arg
+                break
+        assert parent_broadcast is not None
+        assert len(parent_broadcast["subagents"]) == 1
+        assert parent_broadcast["subagents"][0]["id"] == "sub-bc-1"
+    finally:
+        set_update_callback(None)
+
+
 # --- Issue #1: Notification hook pipeline and hardening tests ---
 
 

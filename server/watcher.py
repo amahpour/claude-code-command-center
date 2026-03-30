@@ -354,6 +354,18 @@ def _session_id_from_path(file_path: str) -> str | None:
     return p.stem
 
 
+def _parent_session_id_from_path(file_path: str) -> str | None:
+    """Extract the parent session ID if this is a subagent transcript file.
+
+    Subagent transcripts live at:
+      .../<parent-session-id>/subagents/agent-<id>.jsonl
+    """
+    p = Path(file_path)
+    if p.parent.name == "subagents":
+        return p.parent.parent.name
+    return None
+
+
 async def _extract_ticket_id(branch_name: str) -> str | None:
     """Extract a Jira ticket ID from a git branch name using configured project keys."""
     raw = await db.get_setting("jira_project_keys")
@@ -398,8 +410,11 @@ async def _process_file_changes(file_path: str):
 
     # Ensure session exists
     session = await db.get_session(session_id)
+    parent_id = _parent_session_id_from_path(file_path)
     if session is None:
         await db.create_session(session_id, project_path=str(Path(file_path).parent))
+        if parent_id:
+            await db.update_session(session_id, parent_session_id=parent_id)
 
     # Track latest usage from new entries (not cumulative — use most recent snapshot)
     latest_input = 0

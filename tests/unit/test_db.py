@@ -229,3 +229,64 @@ async def test_last_activity_preview_column():
     assert session.get("last_activity_preview") is None
     updated = await db.update_session("preview-col-1", last_activity_preview="Editing file.py")
     assert updated["last_activity_preview"] == "Editing file.py"
+
+
+async def test_subagent_columns_exist():
+    """parent_session_id and agent_type columns should be stored correctly."""
+    session = await db.create_session("sub-col-1")
+    assert session.get("parent_session_id") is None
+    assert session.get("agent_type") is None
+
+    updated = await db.update_session(
+        "sub-col-1", parent_session_id="parent-1", agent_type="codegen"
+    )
+    assert updated["parent_session_id"] == "parent-1"
+    assert updated["agent_type"] == "codegen"
+
+
+async def test_get_subagents_for_session():
+    """get_subagents_for_session returns subagents for a given parent."""
+    await db.create_session("parent-sub-1")
+    await db.create_session("child-1")
+    await db.update_session("child-1", parent_session_id="parent-sub-1", agent_type="codegen")
+    await db.create_session("child-2")
+    await db.update_session("child-2", parent_session_id="parent-sub-1", agent_type="research")
+
+    subagents = await db.get_subagents_for_session("parent-sub-1")
+    assert len(subagents) == 2
+    ids = [s["id"] for s in subagents]
+    assert "child-1" in ids
+    assert "child-2" in ids
+
+
+async def test_get_subagents_by_parent():
+    """get_subagents_by_parent groups subagents by their parent session ID."""
+    await db.create_session("p1")
+    await db.create_session("p2")
+    await db.create_session("p1-child-a")
+    await db.update_session("p1-child-a", parent_session_id="p1", agent_type="codegen")
+    await db.create_session("p1-child-b")
+    await db.update_session("p1-child-b", parent_session_id="p1", agent_type="research")
+    await db.create_session("p2-child-a")
+    await db.update_session("p2-child-a", parent_session_id="p2", agent_type="codegen")
+
+    result = await db.get_subagents_by_parent(["p1", "p2"])
+    assert len(result["p1"]) == 2
+    assert len(result["p2"]) == 1
+    p1_ids = [s["id"] for s in result["p1"]]
+    assert "p1-child-a" in p1_ids
+    assert "p1-child-b" in p1_ids
+    assert result["p2"][0]["id"] == "p2-child-a"
+
+
+async def test_active_sessions_exclude_subagents():
+    """get_all_active_sessions should not return sessions with a parent_session_id."""
+    await db.create_session("active-parent")
+    await db.update_session("active-parent", status="working")
+    await db.create_session("active-child")
+    await db.update_session("active-child", status="working", parent_session_id="active-parent")
+
+    active = await db.get_all_active_sessions()
+    ids = [s["id"] for s in active]
+    assert "active-parent" in ids
+    assert "active-child" not in ids

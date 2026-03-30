@@ -113,6 +113,8 @@ async def _create_tables(db: aiosqlite.Connection):
         ("display_name", "TEXT"),
         ("display_name_locked", "INTEGER DEFAULT 0"),
         ("last_activity_preview", "TEXT"),
+        ("parent_session_id", "TEXT"),
+        ("agent_type", "TEXT"),
     ]:
         try:
             await db.execute(f"ALTER TABLE sessions ADD COLUMN {col} {col_type}")
@@ -182,11 +184,12 @@ async def get_session(session_id: str) -> dict | None:
 
 
 async def get_all_active_sessions() -> list[dict]:
-    """Get all non-completed sessions, sorted by status priority."""
+    """Get all non-completed parent sessions (no subagents), sorted by status priority."""
     db = await get_db()
     cursor = await db.execute("""
         SELECT * FROM sessions
         WHERE status != 'completed'
+          AND parent_session_id IS NULL
           AND id NOT LIKE 'agent-%'
         ORDER BY
             CASE status
@@ -200,6 +203,40 @@ async def get_all_active_sessions() -> list[dict]:
     """)
     rows = await cursor.fetchall()
     return [dict(r) for r in rows]
+
+
+async def get_subagents_for_session(parent_id: str) -> list[dict]:
+    """Get all subagent sessions for a given parent session."""
+    db = await get_db()
+    cursor = await db.execute(
+        """SELECT * FROM sessions
+           WHERE parent_session_id = ?
+           ORDER BY started_at ASC""",
+        (parent_id,),
+    )
+    rows = await cursor.fetchall()
+    return [dict(r) for r in rows]
+
+
+async def get_subagents_by_parent(parent_ids: list[str]) -> dict[str, list[dict]]:
+    """Get subagents grouped by parent session ID (batch query)."""
+    if not parent_ids:
+        return {}
+    db = await get_db()
+    placeholders = ",".join("?" for _ in parent_ids)
+    cursor = await db.execute(
+        f"""SELECT * FROM sessions
+            WHERE parent_session_id IN ({placeholders})
+            ORDER BY started_at ASC""",
+        parent_ids,
+    )
+    rows = await cursor.fetchall()
+    result: dict[str, list[dict]] = {}
+    for row in rows:
+        d = dict(row)
+        pid = d["parent_session_id"]
+        result.setdefault(pid, []).append(d)
+    return result
 
 
 async def get_all_sessions(limit: int = 50, offset: int = 0) -> list[dict]:

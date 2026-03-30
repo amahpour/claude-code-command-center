@@ -59,18 +59,23 @@ async def health():
 
 @router.get("/sessions")
 async def list_sessions():
-    """List all active sessions, sorted by status priority."""
+    """List all active sessions with nested subagents."""
     sessions = await db.get_all_active_sessions()
+    parent_ids = [s["id"] for s in sessions]
+    subagents_map = await db.get_subagents_by_parent(parent_ids)
+    for s in sessions:
+        s["subagents"] = subagents_map.get(s["id"], [])
     return {"sessions": sessions}
 
 
 @router.get("/sessions/{session_id}")
 async def get_session(session_id: str):
-    """Get a single session with recent events."""
+    """Get a single session with recent events and subagents."""
     session = await db.get_session(session_id)
     if not session:
         raise HTTPException(status_code=404, detail="Session not found")
     events = await db.get_session_events(session_id, limit=50)
+    session["subagents"] = await db.get_subagents_for_session(session_id)
     return {"session": session, "events": events}
 
 

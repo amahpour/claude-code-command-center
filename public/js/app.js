@@ -251,8 +251,25 @@ const App = {
       this.updateStats();
     } else if (data.type === 'session_update') {
       const session = data.session;
-      this.sessions[session.id] = session;
-      Dashboard.updateCard(session);
+      if (session.parent_session_id) {
+        // Subagent update — route to parent card, never create a tile
+        const parent = this.sessions[session.parent_session_id];
+        if (parent) {
+          const subs = parent.subagents || [];
+          const idx = subs.findIndex(s => s.id === session.id);
+          if (idx >= 0) subs[idx] = session;
+          else subs.push(session);
+          parent.subagents = subs;
+          Dashboard.updateCard(parent);
+        }
+      } else {
+        // Parent session update — preserve existing subagents if not provided
+        if (!session.subagents && this.sessions[session.id]) {
+          session.subagents = this.sessions[session.id].subagents || [];
+        }
+        this.sessions[session.id] = session;
+        Dashboard.updateCard(session);
+      }
       this.updateStats();
     }
   },

@@ -141,7 +141,8 @@ const SessionViewer = {
       if (!container) return;
 
       const planGroups = this._detectPlanGroups(transcripts);
-      container.innerHTML = this._renderTranscriptWithPlans(transcripts, planGroups);
+      const agentGroups = this._detectAgentGroups(transcripts);
+      container.innerHTML = this._renderTranscriptWithGroups(transcripts, planGroups, agentGroups);
 
       // Auto-scroll to bottom
       container.scrollTop = container.scrollHeight;
@@ -398,16 +399,142 @@ const SessionViewer = {
     return null;
   },
 
-  _renderTranscriptWithPlans(transcripts, planGroups) {
-    if (planGroups.length === 0) {
+  _detectAgentGroups(transcripts) {
+    const groups = [];
+    for (let i = 0; i < transcripts.length; i++) {
+      const t = transcripts[i];
+      if (t.role !== 'assistant' || !t.content) continue;
+
+      // Check for standalone [Tool: Agent] call
+      if (!t.content.includes('[Tool: Agent]')) continue;
+
+      // Extract prompt from the Agent tool block
+      const lines = t.content.split('\n');
+      const toolIdx = lines.findIndex(l => l.trim() === '[Tool: Agent]');
+      if (toolIdx < 0) continue;
+
+      const promptLines = [];
+      for (let j = toolIdx + 1; j < lines.length; j++) {
+        if (lines[j].match(/^\[Tool: .+\]$/)) break;
+        promptLines.push(lines[j]);
+      }
+      const prompt = promptLines.join('\n').trim();
+
+      // Look for the corresponding tool_result with agentId
+      let agentId = null;
+      let agentType = null;
+      let resultSummary = '';
+      let resultIdx = -1;
+      for (let j = i + 1; j < Math.min(i + 10, transcripts.length); j++) {
+        const r = transcripts[j];
+        if (r.role === 'tool_result' && r.content) {
+          try {
+            const parsed = JSON.parse(r.content);
+            if (parsed.agentId) {
+              agentId = 'agent-' + parsed.agentId;
+              agentType = parsed.agentType || 'agent';
+              resultSummary = parsed.content || parsed.result || '';
+              resultIdx = j;
+              break;
+            }
+          } catch {
+            // Not JSON or not an agent result — check next
+          }
+        }
+        // If we hit another assistant message, stop looking
+        if (r.role === 'assistant') break;
+      }
+
+      const memberIndices = [i];
+      if (resultIdx >= 0) memberIndices.push(resultIdx);
+
+      groups.push({
+        startIndex: i,
+        endIndex: resultIdx >= 0 ? resultIdx : i,
+        memberIndices,
+        prompt: prompt.substring(0, 200),
+        agentId,
+        agentType: agentType || 'agent',
+        resultSummary,
+        timestamp: t.timestamp,
+      });
+    }
+    return groups;
+  },
+
+  _renderAgentBlock(group) {
+    const time = group.timestamp ? this._fmtTime(group.timestamp) : '';
+    const uid = Math.random().toString(36).slice(2, 8);
+    const promptPreview = group.prompt.split('\n')[0].substring(0, 100);
+    const status = group.agentId ? 'completed' : 'pending';
+
+    let transcriptSection = '';
+    if (group.agentId) {
+      transcriptSection = `
+        <div class="agent-transcript-toggle" onclick="event.stopPropagation(); SessionViewer.toggleAgentTranscript('${group.agentId}', '${uid}')">
+          <span class="tool-chevron" id="agent-chevron-${uid}">&#9656;</span>
+          <span>View full subagent conversation</span>
+        </div>
+        <div class="agent-transcript-content" id="agent-transcript-${uid}" style="display:none"></div>`;
+    }
+
+    return `
+      <div class="agent-block">
+        <div class="agent-block-header">
+          <span class="agent-block-icon">&#129302;</span>
+          <span class="agent-block-title">Spawned Agent</span>
+          <span class="agent-type-badge">${this._escapeHTML(group.agentType)}</span>
+          <span class="transcript-live-time">${time}</span>
+        </div>
+        <div class="agent-block-prompt">${this._escapeHTML(promptPreview)}</div>
+        ${group.resultSummary ? `<div class="agent-block-result">${this._fmtText(group.resultSummary.substring(0, 500))}</div>` : ''}
+        ${transcriptSection}
+      </div>`;
+  },
+
+  async toggleAgentTranscript(agentId, uid) {
+    const container = document.getElementById(`agent-transcript-${uid}`);
+    const chevron = document.getElementById(`agent-chevron-${uid}`);
+    if (!container) return;
+    const isOpen = container.style.display !== 'none';
+    if (isOpen) {
+      container.style.display = 'none';
+      if (chevron) chevron.style.transform = '';
+      return;
+    }
+    container.style.display = 'block';
+    if (chevron) chevron.style.transform = 'rotate(90deg)';
+    container.innerHTML = '<div style="color: var(--text-dim); font-style: italic; padding: 8px;">Loading subagent transcript...</div>';
+    try {
+      const resp = await fetch(`/api/sessions/${agentId}/transcript?limit=200`);
+      const data = await resp.json();
+      const msgs = data.transcripts || [];
+      if (msgs.length === 0) {
+        container.innerHTML = '<div style="color: var(--text-dim); font-style: italic; padding: 8px;">No transcript available</div>';
+        return;
+      }
+      container.innerHTML = msgs.map(t => this._renderMessage(t)).join('');
+    } catch {
+      container.innerHTML = '<div style="color: var(--text-dim); font-style: italic; padding: 8px;">Failed to load transcript</div>';
+    }
+  },
+
+  _renderTranscriptWithGroups(transcripts, planGroups, agentGroups) {
+    const allGroups = planGroups.length + agentGroups.length;
+    if (allGroups === 0) {
       return transcripts.map(t => this._renderMessage(t)).join('');
     }
 
-    // Build membership lookup
+    // Build membership lookup: index -> { type, groupIdx }
     const memberOf = {};
     for (let g = 0; g < planGroups.length; g++) {
       for (const idx of planGroups[g].memberIndices) {
-        memberOf[idx] = g;
+        memberOf[idx] = { type: 'plan', groupIdx: g };
+      }
+    }
+    for (let g = 0; g < agentGroups.length; g++) {
+      for (const idx of agentGroups[g].memberIndices) {
+        memberOf[idx] = { type: 'agent', groupIdx: g };
       }
     }
 
@@ -416,18 +543,27 @@ const SessionViewer = {
 
     for (let i = 0; i < transcripts.length; i++) {
       if (memberOf[i] !== undefined) {
-        const groupIdx = memberOf[i];
-        if (!rendered.has(groupIdx)) {
-          rendered.add(groupIdx);
-          parts.push(this._renderPlanBlock(planGroups[groupIdx], transcripts));
+        const { type, groupIdx } = memberOf[i];
+        const key = `${type}-${groupIdx}`;
+        if (!rendered.has(key)) {
+          rendered.add(key);
+          if (type === 'plan') {
+            parts.push(this._renderPlanBlock(planGroups[groupIdx], transcripts));
+          } else {
+            parts.push(this._renderAgentBlock(agentGroups[groupIdx]));
+          }
         }
-        // Skip individual entries that belong to a plan group
       } else {
         parts.push(this._renderMessage(transcripts[i]));
       }
     }
 
     return parts.join('');
+  },
+
+  // Legacy name kept for backward compat
+  _renderTranscriptWithPlans(transcripts, planGroups) {
+    return this._renderTranscriptWithGroups(transcripts, planGroups, []);
   },
 
   _renderPlanBlock(group, transcripts) {
