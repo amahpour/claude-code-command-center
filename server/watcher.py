@@ -5,6 +5,7 @@ import json
 import logging
 import os
 import re
+from datetime import UTC, datetime
 from pathlib import Path
 
 from server import db
@@ -470,7 +471,12 @@ async def _process_file_changes(file_path: str):
         )
 
     # Enrich session with discovered metadata
-    session_updates = {}
+    # Always update last_activity_at when new entries arrive
+    session_updates: dict = {"last_activity_at": datetime.now(UTC).isoformat()}
+    # If session was stale but new entries are coming in, mark it active again
+    session = await db.get_session(session_id)
+    if session and session.get("status") == "stale":
+        session_updates["status"] = "idle"
     if model:
         session_updates["model"] = model
     if slug:
