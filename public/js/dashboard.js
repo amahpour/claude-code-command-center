@@ -312,8 +312,8 @@ const Dashboard = {
   },
 
   _subagentsHTML(subagents) {
-    // Only show active (non-completed) subagents in the tile
-    const active = (subagents || []).filter(a => a.status !== 'completed');
+    // Only show in-flight subagents in the tile (not completed or stale)
+    const active = (subagents || []).filter(a => a.status !== 'completed' && a.status !== 'stale');
     if (active.length === 0) return '';
     subagents = active;
     // Use first subagent's parent_session_id as section key, fallback to combined IDs
