@@ -115,7 +115,7 @@ const Dashboard = {
     const lockIcon = isLocked ? '&#128274;' : '&#128275;';
     const lockTitle = isLocked ? 'Title locked (click to unlock)' : 'Title auto-updates (click to lock)';
 
-    const previewText = s.last_activity_preview || s.task_description || '';
+    const previewText = s.last_activity_preview || '';
     const previewLine = previewText
       ? `<div class="card-preview" onclick="event.stopPropagation(); Dashboard.togglePreview('${this._escapeHTML(s.id)}', this)">
           <span class="preview-chevron">&#9656;</span>
