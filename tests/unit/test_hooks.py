@@ -664,9 +664,7 @@ async def test_check_stale_notifies_on_update():
 
 async def test_notification_stores_message_in_task_description():
     """Notification event message should be saved to task_description."""
-    await process_hook_event(
-        {"event_type": "SessionStart", "session_id": "notif-msg-1", "cwd": "/tmp/test"}
-    )
+    await process_hook_event({"event_type": "SessionStart", "session_id": "notif-msg-1", "cwd": "/tmp/test"})
     result = await process_hook_event(
         {
             "event_type": "Notification",
@@ -728,9 +726,7 @@ async def test_notification_broadcasts_update():
     callback = AsyncMock()
     set_update_callback(callback)
     try:
-        await process_hook_event(
-            {"event_type": "SessionStart", "session_id": "notif-bc-1", "cwd": "/tmp/test"}
-        )
+        await process_hook_event({"event_type": "SessionStart", "session_id": "notif-bc-1", "cwd": "/tmp/test"})
         callback.reset_mock()
         await process_hook_event(
             {
@@ -754,68 +750,44 @@ async def test_full_lifecycle_idle_working_waiting_working_idle():
     """Test the complete lifecycle: idle → working → waiting → working → idle."""
     with patch("server.hooks._extract_git_branch", return_value=None):
         sid = "lifecycle-1"
-        r = await process_hook_event(
-            {"event_type": "SessionStart", "session_id": sid, "cwd": "/tmp/test"}
-        )
+        r = await process_hook_event({"event_type": "SessionStart", "session_id": sid, "cwd": "/tmp/test"})
         assert r["status"] == "idle"
 
-        r = await process_hook_event(
-            {"event_type": "PreToolUse", "session_id": sid, "tool_name": "Write"}
-        )
+        r = await process_hook_event({"event_type": "PreToolUse", "session_id": sid, "tool_name": "Write"})
         assert r["status"] == "working"
 
-        r = await process_hook_event(
-            {"event_type": "Notification", "session_id": sid, "message": "Approve?"}
-        )
+        r = await process_hook_event({"event_type": "Notification", "session_id": sid, "message": "Approve?"})
         assert r["status"] == "waiting"
 
-        r = await process_hook_event(
-            {"event_type": "PreToolUse", "session_id": sid, "tool_name": "Write"}
-        )
+        r = await process_hook_event({"event_type": "PreToolUse", "session_id": sid, "tool_name": "Write"})
         assert r["status"] == "working"
 
-        r = await process_hook_event(
-            {"event_type": "Stop", "session_id": sid, "cost_usd": 0.01}
-        )
+        r = await process_hook_event({"event_type": "Stop", "session_id": sid, "cost_usd": 0.01})
         assert r["status"] == "idle"
 
 
 async def test_lifecycle_waiting_to_stop():
     """Test transition: waiting → idle via Stop (user approves and session completes)."""
     sid = "lifecycle-2"
-    await process_hook_event(
-        {"event_type": "SessionStart", "session_id": sid, "cwd": "/tmp/test"}
-    )
-    await process_hook_event(
-        {"event_type": "Notification", "session_id": sid, "message": "Approve?"}
-    )
-    r = await process_hook_event(
-        {"event_type": "Stop", "session_id": sid}
-    )
+    await process_hook_event({"event_type": "SessionStart", "session_id": sid, "cwd": "/tmp/test"})
+    await process_hook_event({"event_type": "Notification", "session_id": sid, "message": "Approve?"})
+    r = await process_hook_event({"event_type": "Stop", "session_id": sid})
     assert r["status"] == "idle"
 
 
 async def test_lifecycle_waiting_to_session_end():
     """Test transition: waiting → completed via SessionEnd."""
     sid = "lifecycle-3"
-    await process_hook_event(
-        {"event_type": "SessionStart", "session_id": sid, "cwd": "/tmp/test"}
-    )
-    await process_hook_event(
-        {"event_type": "Notification", "session_id": sid, "message": "Approve?"}
-    )
-    r = await process_hook_event(
-        {"event_type": "SessionEnd", "session_id": sid}
-    )
+    await process_hook_event({"event_type": "SessionStart", "session_id": sid, "cwd": "/tmp/test"})
+    await process_hook_event({"event_type": "Notification", "session_id": sid, "message": "Approve?"})
+    r = await process_hook_event({"event_type": "SessionEnd", "session_id": sid})
     assert r["status"] == "completed"
 
 
 async def test_rapid_successive_notifications():
     """Rapid Notification events should each update task_description."""
     sid = "rapid-notif-1"
-    await process_hook_event(
-        {"event_type": "SessionStart", "session_id": sid, "cwd": "/tmp/test"}
-    )
+    await process_hook_event({"event_type": "SessionStart", "session_id": sid, "cwd": "/tmp/test"})
     for i in range(5):
         r = await process_hook_event(
             {
@@ -831,16 +803,10 @@ async def test_rapid_successive_notifications():
 async def test_notification_followed_by_immediate_stop():
     """Race condition: Notification then Stop in quick succession."""
     sid = "race-1"
-    await process_hook_event(
-        {"event_type": "SessionStart", "session_id": sid, "cwd": "/tmp/test"}
-    )
-    await process_hook_event(
-        {"event_type": "Notification", "session_id": sid, "message": "Approve?"}
-    )
+    await process_hook_event({"event_type": "SessionStart", "session_id": sid, "cwd": "/tmp/test"})
+    await process_hook_event({"event_type": "Notification", "session_id": sid, "message": "Approve?"})
     # Stop arrives immediately after
-    r = await process_hook_event(
-        {"event_type": "Stop", "session_id": sid, "cost_usd": 0.01}
-    )
+    r = await process_hook_event({"event_type": "Stop", "session_id": sid, "cost_usd": 0.01})
     assert r["status"] == "idle"
 
 
