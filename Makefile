@@ -1,31 +1,40 @@
 .DEFAULT_GOAL := help
-PYTHON := python
 PORT := 3000
+# Prefer project .venv via uv so `make up` works without `source .venv/bin/activate`
+UV_RUN := uv run
 
-.PHONY: help up down test lint format typecheck check clean
+.PHONY: help setup install up down test lint format typecheck check clean
 
 help: ## Show this help
 	@grep -E '^[a-zA-Z_-]+:.*?## .*$$' $(MAKEFILE_LIST) | awk 'BEGIN {FS = ":.*?## "}; {printf "  \033[36m%-15s\033[0m %s\n", $$1, $$2}'
 
-up: ## Start the server (port 3000)
-	uvicorn server.main:app --port $(PORT) --reload
+setup install: ## Full local setup: uv venv + dev deps, Playwright Chromium, Claude hooks
+	uv sync --extra dev
+	uv run python -m playwright install chromium
+	bash scripts/setup.sh
+	@echo ""
+	@echo "Setup complete. Start the app:  make up"
+	@echo "If Playwright/e2e fails (missing OS libs), run:  uv run python -m playwright install --with-deps chromium"
+
+up: ## Start the server (port 3000; override with PORT=3001)
+	$(UV_RUN) uvicorn server.main:app --port $(PORT) --reload
 
 down: ## Stop the server
 	@pkill -f "uvicorn server.main:app" 2>/dev/null && echo "Server stopped" || echo "Server not running"
 
 test: ## Run all tests
-	$(PYTHON) -m pytest tests/ -v
+	$(UV_RUN) python -m pytest tests/ -v
 
 lint: ## Run ruff linter and format check
-	ruff check .
-	ruff format --check .
+	$(UV_RUN) ruff check .
+	$(UV_RUN) ruff format --check .
 
 format: ## Auto-format code with ruff
-	ruff check --fix .
-	ruff format .
+	$(UV_RUN) ruff check --fix .
+	$(UV_RUN) ruff format .
 
 typecheck: ## Run mypy type checking
-	mypy server/
+	$(UV_RUN) mypy server/
 
 check: lint typecheck test ## Run all checks (lint + typecheck + test)
 
