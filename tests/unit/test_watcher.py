@@ -14,7 +14,7 @@ from server.watcher import (
     _file_positions,
     _extract_content,
     _session_id_from_path,
-    _generate_llm_title,
+    _generate_auto_title,
     _extract_activity_preview,
 )
 
@@ -728,57 +728,35 @@ async def test_process_file_no_session_id():
 # --- _generate_auto_title ---
 
 
-async def test_generate_llm_title_success():
-    """LLM title generation should update display_name."""
-    await db.create_session("llm-title-1")
-    await db.add_transcript("llm-title-1", "user", "Fix the authentication bug in the login module")
-
-    mock_proc = AsyncMock()
-    mock_proc.communicate = AsyncMock(return_value=(b"Fix Auth Login Bug", b""))
-
-    with patch("asyncio.create_subprocess_exec", return_value=mock_proc):
-        with patch("server.routes.ws.broadcast_session_update", new_callable=AsyncMock):
-            await _generate_llm_title("llm-title-1", "Fix the authentication bug", None)
-
-    session = await db.get_session("llm-title-1")
-    assert session["display_name"] == "Fix Auth Login Bug"
+def test_generate_auto_title_from_branch():
+    """Should derive title from cleaned-up git branch name."""
+    assert _generate_auto_title("some task", "feature/PROJ-42-fix-auth-bug") == "Fix Auth Bug"
+    assert _generate_auto_title("some task", "feat/add-dark-mode") == "Add Dark Mode"
+    assert _generate_auto_title("some task", "fix/CIT-357-table-inline-filters") == "Table Inline Filters"
 
 
-async def test_generate_llm_title_respects_lock():
-    """LLM title should not overwrite locked sessions."""
-    await db.create_session("llm-title-2")
-    await db.update_session("llm-title-2", display_name="My Title", display_name_locked=1)
-
-    mock_proc = AsyncMock()
-    mock_proc.communicate = AsyncMock(return_value=(b"New Title", b""))
-
-    with patch("asyncio.create_subprocess_exec", return_value=mock_proc):
-        await _generate_llm_title("llm-title-2", "Some task", None)
-
-    session = await db.get_session("llm-title-2")
-    assert session["display_name"] == "My Title"
+def test_generate_auto_title_branch_no_prefix():
+    """Branch without common prefix still works."""
+    assert _generate_auto_title("task", "improve-search-results") == "Improve Search Results"
 
 
-async def test_generate_llm_title_timeout():
-    """LLM title should handle timeout gracefully."""
-    await db.create_session("llm-title-3")
-
-    with patch("asyncio.create_subprocess_exec", side_effect=asyncio.TimeoutError):
-        await _generate_llm_title("llm-title-3", "Some task", None)
-
-    session = await db.get_session("llm-title-3")
-    assert session.get("display_name") is None
+def test_generate_auto_title_fallback_to_description():
+    """Falls back to truncated description when branch is unhelpful."""
+    assert _generate_auto_title("Fix the auth bug in login", None) == "Fix the auth bug in..."
+    assert _generate_auto_title("Fix the auth bug in login", "main") is not None
 
 
-async def test_generate_llm_title_cli_not_found():
-    """LLM title should handle missing claude CLI gracefully."""
-    await db.create_session("llm-title-4")
+def test_generate_auto_title_short_description():
+    assert _generate_auto_title("Fix auth bug", None) == "Fix auth bug"
 
-    with patch("asyncio.create_subprocess_exec", side_effect=FileNotFoundError):
-        await _generate_llm_title("llm-title-4", "Some task", None)
 
-    session = await db.get_session("llm-title-4")
-    assert session.get("display_name") is None
+def test_generate_auto_title_empty():
+    assert _generate_auto_title("", None) is None
+    assert _generate_auto_title(None, None) is None
+
+
+def test_generate_auto_title_tiny():
+    assert _generate_auto_title("Hi", None) is None
 
 
 # --- _extract_activity_preview ---
@@ -834,8 +812,8 @@ def test_extract_activity_preview_uses_latest():
 # --- Auto-title + preview in _process_file_changes ---
 
 
-async def test_process_file_triggers_llm_title():
-    """First user message should trigger LLM title generation as background task."""
+async def test_process_file_auto_title_from_branch():
+    """Auto-title should use git branch when available."""
     with tempfile.NamedTemporaryFile(
         mode="w", suffix=".jsonl", delete=False, dir=tempfile.gettempdir()
     ) as f:
@@ -843,26 +821,29 @@ async def test_process_file_triggers_llm_title():
             "type": "user",
             "message": {"role": "user", "content": "Fix the authentication bug in the login module"},
             "timestamp": "2026-03-29T10:00:00Z",
+            "gitBranch": "feature/PROJ-42-fix-auth-bug",
         }) + "\n")
         tmp_path = f.name
 
     try:
-        with patch("server.routes.ws.broadcast_session_update", new_callable=AsyncMock), \
-             patch("server.watcher.asyncio.create_task") as mock_create_task:
+        with patch("server.routes.ws.broadcast_session_update", new_callable=AsyncMock):
             await _process_file_changes(tmp_path)
-            assert mock_create_task.called
+        session_id = os.path.splitext(os.path.basename(tmp_path))[0]
+        session = await db.get_session(session_id)
+        assert session["display_name"] == "Fix Auth Bug"
     finally:
         os.unlink(tmp_path)
 
 
-async def test_process_file_locked_skips_llm_title():
-    """Locked sessions should not trigger LLM title generation."""
+async def test_process_file_locked_skips_auto_title():
+    """Locked sessions should not have their display_name overwritten."""
     with tempfile.NamedTemporaryFile(
         mode="w", suffix=".jsonl", delete=False, dir=tempfile.gettempdir()
     ) as f:
         f.write(json.dumps({
             "type": "user",
-            "message": {"role": "user", "content": "Fix the authentication bug in the login module"},
+            "message": {"role": "user", "content": "Fix the authentication bug"},
+            "gitBranch": "feature/something-else",
         }) + "\n")
         tmp_path = f.name
 
@@ -871,10 +852,10 @@ async def test_process_file_locked_skips_llm_title():
         await db.create_session(session_id)
         await db.update_session(session_id, display_name="My custom title", display_name_locked=1)
 
-        with patch("server.routes.ws.broadcast_session_update", new_callable=AsyncMock), \
-             patch("server.watcher.asyncio.create_task") as mock_create_task:
+        with patch("server.routes.ws.broadcast_session_update", new_callable=AsyncMock):
             await _process_file_changes(tmp_path)
-            assert not mock_create_task.called
+        session = await db.get_session(session_id)
+        assert session["display_name"] == "My custom title"
     finally:
         os.unlink(tmp_path)
 

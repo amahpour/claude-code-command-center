@@ -23,9 +23,6 @@ DEBOUNCE_SECONDS = 1.0
 
 _watcher_task: asyncio.Task | None = None
 
-# Track sessions with pending LLM title generation to avoid duplicate spawns
-_pending_title_tasks: set[str] = set()
-
 
 def _parse_jsonl_entry(line: str) -> dict | None:
     """Parse a single JSONL line into a structured entry.
@@ -253,71 +250,35 @@ def _infer_context_max(model: str | None) -> int:
     return 200000
 
 
-async def _generate_llm_title(session_id: str, task_description: str, git_branch: str | None):
-    """Generate a session title using Claude Code CLI and update the session.
+def _generate_auto_title(task_description: str, git_branch: str | None = None) -> str | None:
+    """Generate a short auto-title from the task description and git branch.
 
-    Runs as a background task — does not block the watcher.
-    Falls back silently on any failure.
+    Prefers the git branch name (cleaned up) since it's usually more descriptive
+    than a truncated user message. Falls back to first ~5 words of task description.
     """
-    if session_id in _pending_title_tasks:
-        return
-    _pending_title_tasks.add(session_id)
-    try:
-        await _generate_llm_title_inner(session_id, task_description, git_branch)
-    finally:
-        _pending_title_tasks.discard(session_id)
-
-
-async def _generate_llm_title_inner(session_id: str, task_description: str, git_branch: str | None):
-    # Gather recent user messages for richer context
-    context_lines = []
-    try:
-        conn = await db.get_db()
-        cursor = await conn.execute(
-            "SELECT content FROM transcripts WHERE session_id = ? AND role = 'user' "
-            "ORDER BY id DESC LIMIT 5",
-            (session_id,),
-        )
-        rows = await cursor.fetchall()
-        context_lines = [r[0][:150] for r in reversed(rows) if r[0]]
-    except Exception:
-        context_lines = [task_description[:300]]
-
-    context = "\n".join(context_lines) if context_lines else task_description[:300]
-    prompt = (
-        "Reply with ONLY a 3-5 word title for this coding session. "
-        "No quotes, no punctuation, no explanation.\n\n"
-        f"Recent user messages:\n{context}"
-    )
+    # Try to derive a title from git branch (e.g., "feature/PROJ-42-fix-auth" → "Fix Auth")
     if git_branch:
-        prompt += f"\nBranch: {git_branch}"
+        # Strip common prefixes
+        branch = git_branch
+        for prefix in ("feature/", "feat/", "fix/", "bugfix/", "hotfix/", "chore/", "refactor/"):
+            if branch.lower().startswith(prefix):
+                branch = branch[len(prefix):]
+                break
+        # Strip ticket IDs (e.g., "PROJ-42-" or "CIT-357-")
+        branch = re.sub(r'^[A-Z]+-\d+-', '', branch)
+        if branch:
+            # Convert kebab-case to title case
+            words = branch.replace("-", " ").replace("_", " ").split()
+            if len(words) >= 2:
+                return " ".join(w.capitalize() for w in words[:6])
 
-    try:
-        proc = await asyncio.create_subprocess_exec(
-            "claude", "-p", prompt, "--model", "haiku",
-            stdout=asyncio.subprocess.PIPE,
-            stderr=asyncio.subprocess.DEVNULL,
-        )
-        stdout, _ = await asyncio.wait_for(proc.communicate(), timeout=15)
-        title = stdout.decode().strip()[:60] if stdout else None
-        if not title:
-            return
-
-        # Re-check lock status before updating (may have changed while we waited)
-        session = await db.get_session(session_id)
-        if not session or session.get("display_name_locked"):
-            return
-
-        await db.update_session(session_id, display_name=title)
-        try:
-            from server.routes.ws import broadcast_session_update
-            updated = await db.get_session(session_id)
-            if updated:
-                await broadcast_session_update(updated)
-        except Exception:
-            pass
-    except (asyncio.TimeoutError, FileNotFoundError, OSError) as e:
-        logger.debug("LLM title generation failed for %s: %s", session_id, e)
+    # Fall back to truncated task description
+    if not task_description or len(task_description.strip()) < 6:
+        return None
+    words = task_description.strip().split()
+    if len(words) <= 5:
+        return task_description.strip()
+    return " ".join(words[:5]) + "..."
 
 
 _TOOL_VERBS = {
@@ -532,15 +493,13 @@ async def _process_file_changes(file_path: str):
     if preview:
         session_updates["last_activity_preview"] = preview
 
-    # Auto-generate display_name via LLM when missing (background, non-blocking)
-    user_entries = [e for e in parsed_entries if e.get("role") == "user"]
-    if user_entries:
+    # Auto-generate display_name when missing and not locked
+    if first_user_message:
         session = session or await db.get_session(session_id)
         if session and not session.get("display_name_locked") and not session.get("display_name"):
-            latest_user = user_entries[-1].get("content", "") or first_user_message or ""
-            asyncio.create_task(
-                _generate_llm_title(session_id, latest_user, git_branch)
-            )
+            auto_title = _generate_auto_title(first_user_message, git_branch)
+            if auto_title:
+                session_updates["display_name"] = auto_title
 
     if session_updates:
         await db.update_session(session_id, **session_updates)
