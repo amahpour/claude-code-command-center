@@ -147,6 +147,9 @@ async def process_hook_event(event_data: dict) -> dict | None:
 
     elif event_type == "Notification":
         base_updates["status"] = "waiting"
+        message = event_data.get("message", "")
+        if message:
+            base_updates["task_description"] = message
         session = await db.update_session(session_id, **base_updates)
 
     elif event_type == "SessionEnd":
@@ -181,7 +184,19 @@ async def _check_stale_sessions():
                     if last_dt.tzinfo is None:
                         last_dt = last_dt.replace(tzinfo=UTC)
                     diff = (now - last_dt).total_seconds()
-                    if diff > 300:  # 5 minutes
+                    if session["status"] == "waiting":
+                        # Waiting sessions use a longer timeout (10 min)
+                        # and get logged prominently since they need operator attention
+                        if diff > 600:
+                            logger.warning(
+                                "Session %s has been waiting for operator input for %d seconds",
+                                session["id"],
+                                int(diff),
+                            )
+                            updated = await db.update_session(session["id"], status="stale")
+                            if updated:
+                                await _notify_update(updated)
+                    elif diff > 300:  # 5 minutes
                         updated = await db.update_session(session["id"], status="stale")
                         if updated:
                             await _notify_update(updated)

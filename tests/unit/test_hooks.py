@@ -140,8 +140,8 @@ async def test_notification_event():
         }
     )
     assert result["status"] == "waiting"
-    # Notification should NOT overwrite task_description
-    assert result.get("task_description") is None
+    # Notification message should be stored in task_description
+    assert result["task_description"] == "Waiting for permission to write file"
 
 
 async def test_subagent_events():
@@ -657,3 +657,270 @@ async def test_check_stale_notifies_on_update():
         assert callback.call_count >= 1
     finally:
         set_update_callback(None)
+
+
+# --- Issue #1: Notification hook pipeline and hardening tests ---
+
+
+async def test_notification_stores_message_in_task_description():
+    """Notification event message should be saved to task_description."""
+    await process_hook_event({"event_type": "SessionStart", "session_id": "notif-msg-1", "cwd": "/tmp/test"})
+    result = await process_hook_event(
+        {
+            "event_type": "Notification",
+            "session_id": "notif-msg-1",
+            "message": "Claude wants to run: rm -rf /tmp/foo",
+        }
+    )
+    assert result["status"] == "waiting"
+    assert result["task_description"] == "Claude wants to run: rm -rf /tmp/foo"
+
+
+async def test_notification_empty_message_does_not_overwrite():
+    """Notification with empty message should not overwrite existing task_description."""
+    await db.create_session("notif-empty-1", task_description="Initial task")
+    result = await process_hook_event(
+        {
+            "event_type": "Notification",
+            "session_id": "notif-empty-1",
+            "message": "",
+        }
+    )
+    assert result["status"] == "waiting"
+    assert result["task_description"] == "Initial task"
+
+
+async def test_notification_missing_message_field():
+    """Notification without message field should not overwrite existing task_description."""
+    await db.create_session("notif-nomsg-1", task_description="Existing desc")
+    result = await process_hook_event(
+        {
+            "event_type": "Notification",
+            "session_id": "notif-nomsg-1",
+        }
+    )
+    assert result["status"] == "waiting"
+    assert result["task_description"] == "Existing desc"
+
+
+async def test_notification_creates_session_if_missing():
+    """Notification for unknown session_id should auto-create the session."""
+    result = await process_hook_event(
+        {
+            "event_type": "Notification",
+            "session_id": "notif-new-1",
+            "message": "Permission needed",
+        }
+    )
+    assert result is not None
+    assert result["status"] == "waiting"
+    assert result["task_description"] == "Permission needed"
+    session = await db.get_session("notif-new-1")
+    assert session is not None
+
+
+async def test_notification_broadcasts_update():
+    """Notification event should trigger the update callback."""
+    from server.hooks import set_update_callback
+
+    callback = AsyncMock()
+    set_update_callback(callback)
+    try:
+        await process_hook_event({"event_type": "SessionStart", "session_id": "notif-bc-1", "cwd": "/tmp/test"})
+        callback.reset_mock()
+        await process_hook_event(
+            {
+                "event_type": "Notification",
+                "session_id": "notif-bc-1",
+                "message": "Approve write?",
+            }
+        )
+        assert callback.call_count == 1
+        broadcast_session = callback.call_args[0][0]
+        assert broadcast_session["status"] == "waiting"
+        assert broadcast_session["task_description"] == "Approve write?"
+    finally:
+        set_update_callback(None)
+
+
+# --- Full status lifecycle transition tests ---
+
+
+async def test_full_lifecycle_idle_working_waiting_working_idle():
+    """Test the complete lifecycle: idle → working → waiting → working → idle."""
+    with patch("server.hooks._extract_git_branch", return_value=None):
+        sid = "lifecycle-1"
+        r = await process_hook_event({"event_type": "SessionStart", "session_id": sid, "cwd": "/tmp/test"})
+        assert r["status"] == "idle"
+
+        r = await process_hook_event({"event_type": "PreToolUse", "session_id": sid, "tool_name": "Write"})
+        assert r["status"] == "working"
+
+        r = await process_hook_event({"event_type": "Notification", "session_id": sid, "message": "Approve?"})
+        assert r["status"] == "waiting"
+
+        r = await process_hook_event({"event_type": "PreToolUse", "session_id": sid, "tool_name": "Write"})
+        assert r["status"] == "working"
+
+        r = await process_hook_event({"event_type": "Stop", "session_id": sid, "cost_usd": 0.01})
+        assert r["status"] == "idle"
+
+
+async def test_lifecycle_waiting_to_stop():
+    """Test transition: waiting → idle via Stop (user approves and session completes)."""
+    sid = "lifecycle-2"
+    await process_hook_event({"event_type": "SessionStart", "session_id": sid, "cwd": "/tmp/test"})
+    await process_hook_event({"event_type": "Notification", "session_id": sid, "message": "Approve?"})
+    r = await process_hook_event({"event_type": "Stop", "session_id": sid})
+    assert r["status"] == "idle"
+
+
+async def test_lifecycle_waiting_to_session_end():
+    """Test transition: waiting → completed via SessionEnd."""
+    sid = "lifecycle-3"
+    await process_hook_event({"event_type": "SessionStart", "session_id": sid, "cwd": "/tmp/test"})
+    await process_hook_event({"event_type": "Notification", "session_id": sid, "message": "Approve?"})
+    r = await process_hook_event({"event_type": "SessionEnd", "session_id": sid})
+    assert r["status"] == "completed"
+
+
+async def test_rapid_successive_notifications():
+    """Rapid Notification events should each update task_description."""
+    sid = "rapid-notif-1"
+    await process_hook_event({"event_type": "SessionStart", "session_id": sid, "cwd": "/tmp/test"})
+    for i in range(5):
+        r = await process_hook_event(
+            {
+                "event_type": "Notification",
+                "session_id": sid,
+                "message": f"Permission #{i}",
+            }
+        )
+        assert r["status"] == "waiting"
+        assert r["task_description"] == f"Permission #{i}"
+
+
+async def test_notification_followed_by_immediate_stop():
+    """Race condition: Notification then Stop in quick succession."""
+    sid = "race-1"
+    await process_hook_event({"event_type": "SessionStart", "session_id": sid, "cwd": "/tmp/test"})
+    await process_hook_event({"event_type": "Notification", "session_id": sid, "message": "Approve?"})
+    # Stop arrives immediately after
+    r = await process_hook_event({"event_type": "Stop", "session_id": sid, "cost_usd": 0.01})
+    assert r["status"] == "idle"
+
+
+# --- Stale checker: waiting-specific handling tests ---
+
+
+async def test_stale_checker_waiting_session_uses_longer_timeout():
+    """Waiting sessions should NOT be marked stale at 5 min (only at 10 min)."""
+    from server.hooks import _check_stale_sessions
+
+    # 7 minutes old — past normal 5-min threshold but within 10-min waiting threshold
+    old_time = (datetime.now(UTC) - timedelta(minutes=7)).isoformat()
+    await db.create_session("stale-wait-1")
+    await db.update_session("stale-wait-1", status="waiting", last_activity_at=old_time)
+
+    call_count = 0
+
+    async def mock_sleep(seconds):
+        nonlocal call_count
+        call_count += 1
+        if call_count > 1:
+            raise asyncio.CancelledError()
+
+    with patch("asyncio.sleep", side_effect=mock_sleep):
+        try:
+            await _check_stale_sessions()
+        except asyncio.CancelledError:
+            pass
+
+    s = await db.get_session("stale-wait-1")
+    assert s["status"] == "waiting"  # Should NOT be stale yet
+
+
+async def test_stale_checker_waiting_session_stale_after_10_min():
+    """Waiting sessions should be marked stale after 10 minutes."""
+    import server.hooks as hooks_mod
+    from server.hooks import _check_stale_sessions
+
+    # 12 minutes old — past 10-min waiting threshold
+    old_time = (datetime.now(UTC) - timedelta(minutes=12)).isoformat()
+    await db.create_session("stale-wait-2")
+    await db.update_session("stale-wait-2", status="waiting", last_activity_at=old_time)
+
+    call_count = 0
+
+    async def mock_sleep(seconds):
+        nonlocal call_count
+        call_count += 1
+        if call_count > 1:
+            raise asyncio.CancelledError()
+
+    with patch("asyncio.sleep", side_effect=mock_sleep), patch.object(hooks_mod, "_on_session_update", new=None):
+        try:
+            await _check_stale_sessions()
+        except asyncio.CancelledError:
+            pass
+
+    s = await db.get_session("stale-wait-2")
+    assert s["status"] == "stale"
+
+
+async def test_stale_checker_non_waiting_still_5_min():
+    """Non-waiting sessions should still use the 5-min threshold."""
+    import server.hooks as hooks_mod
+    from server.hooks import _check_stale_sessions
+
+    old_time = (datetime.now(UTC) - timedelta(minutes=7)).isoformat()
+    await db.create_session("stale-idle-1")
+    await db.update_session("stale-idle-1", status="idle", last_activity_at=old_time)
+
+    call_count = 0
+
+    async def mock_sleep(seconds):
+        nonlocal call_count
+        call_count += 1
+        if call_count > 1:
+            raise asyncio.CancelledError()
+
+    with patch("asyncio.sleep", side_effect=mock_sleep), patch.object(hooks_mod, "_on_session_update", new=None):
+        try:
+            await _check_stale_sessions()
+        except asyncio.CancelledError:
+            pass
+
+    s = await db.get_session("stale-idle-1")
+    assert s["status"] == "stale"  # 7 min > 5 min threshold
+
+
+async def test_stale_checker_logs_warning_for_long_waiting():
+    """Stale checker should log a warning when a waiting session times out."""
+    import server.hooks as hooks_mod
+    from server.hooks import _check_stale_sessions
+
+    old_time = (datetime.now(UTC) - timedelta(minutes=12)).isoformat()
+    await db.create_session("stale-warn-1")
+    await db.update_session("stale-warn-1", status="waiting", last_activity_at=old_time)
+
+    call_count = 0
+
+    async def mock_sleep(seconds):
+        nonlocal call_count
+        call_count += 1
+        if call_count > 1:
+            raise asyncio.CancelledError()
+
+    with (
+        patch("asyncio.sleep", side_effect=mock_sleep),
+        patch.object(hooks_mod, "_on_session_update", new=None),
+        patch("server.hooks.logger") as mock_logger,
+    ):
+        try:
+            await _check_stale_sessions()
+        except asyncio.CancelledError:
+            pass
+
+    mock_logger.warning.assert_called_once()
+    assert "stale-warn-1" in mock_logger.warning.call_args[0][1]
