@@ -585,6 +585,19 @@ body {
   transition: transform 0.15s;
 }
 
+.card-subagents-done {
+  font-size: 11px;
+  color: var(--text-dim);
+  padding: 4px 0;
+  border-top: 1px solid var(--border);
+  margin-top: 6px;
+}
+
+.subagents-done-count {
+  color: var(--text-dim);
+  font-weight: 400;
+}
+
 .subagent-transcript {
   padding: 6px 12px 6px 16px;
   font-size: 12px;

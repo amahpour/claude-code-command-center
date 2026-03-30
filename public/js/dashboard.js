@@ -312,22 +312,25 @@ const Dashboard = {
   },
 
   _subagentsHTML(subagents) {
-    // Only show in-flight subagents in the tile (not completed or stale)
-    const active = (subagents || []).filter(a => a.status !== 'completed' && a.status !== 'stale');
-    if (active.length === 0) return '';
-    subagents = active;
+    if (!subagents || subagents.length === 0) return '';
+    // Only show actively working subagents in the tile
+    const running = subagents.filter(a => a.status === 'working');
+    const doneCount = subagents.length - running.length;
+    if (running.length === 0) {
+      // Nothing in flight — just show a subtle completed count
+      return doneCount > 0 ? `<div class="card-subagents-done">${doneCount} subagent${doneCount !== 1 ? 's' : ''} completed</div>` : '';
+    }
     // Use first subagent's parent_session_id as section key, fallback to combined IDs
-    const sectionKey = subagents[0]?.parent_session_id || subagents.map(a => a.id).join(',');
+    const sectionKey = running[0]?.parent_session_id || running.map(a => a.id).join(',');
     const sectionOpen = this._expandedSubagentSections.has(sectionKey);
-    const rows = subagents.map(a => {
-      const status = a.status || 'completed';
+    const rows = running.map(a => {
       const type = a.agent_type || 'agent';
       const desc = a.task_description ? this._escapeHTML(a.task_description.substring(0, 100)) : '';
       const duration = this._duration(a.started_at);
       const transcriptOpen = this._expandedSubagentTranscripts.has(a.id);
       return `<div class="subagent-item">
         <div class="subagent-row" onclick="event.stopPropagation(); Dashboard.toggleSubagentTranscript('${this._escapeHTML(a.id)}', this)">
-          <span class="status-dot ${status} small"></span>
+          <span class="status-dot working small"></span>
           <span class="subagent-type">${this._escapeHTML(type)}</span>
           ${desc ? `<span class="subagent-desc">${desc}</span>` : ''}
           <span class="subagent-duration">${duration}</span>
@@ -336,10 +339,11 @@ const Dashboard = {
         <div class="subagent-transcript" id="subagent-transcript-${a.id}" style="display:${transcriptOpen ? 'block' : 'none'}"></div>
       </div>`;
     }).join('');
+    const doneLabel = doneCount > 0 ? ` <span class="subagents-done-count">(${doneCount} done)</span>` : '';
     return `<div class="card-subagents" data-section-key="${this._escapeHTML(sectionKey)}">
       <div class="subagents-header" onclick="event.stopPropagation(); Dashboard.toggleSubagents(this)">
         <span class="preview-chevron" ${sectionOpen ? 'style="transform:rotate(90deg)"' : ''}>&#9656;</span>
-        <span>${subagents.length} subagent${subagents.length !== 1 ? 's' : ''}</span>
+        <span>${running.length} subagent${running.length !== 1 ? 's' : ''} running${doneLabel}</span>
       </div>
       <div class="subagents-list" style="display:${sectionOpen ? 'block' : 'none'}">${rows}</div>
     </div>`;
