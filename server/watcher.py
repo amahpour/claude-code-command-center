@@ -40,6 +40,13 @@ DEBOUNCE_SECONDS = 1.0
 
 _watcher_task: asyncio.Task | None = None
 
+# AI summary generation state
+_user_message_counts: dict[str, int] = {}
+_summary_tasks: dict[str, asyncio.Task] = {}
+_claude_available: bool = True
+SUMMARY_TRIGGER_INTERVAL = 5
+SUMMARY_SUBPROCESS_TIMEOUT = 90
+
 
 def _parse_jsonl_entry(line: str) -> dict | None:
     """Parse a single JSONL line into a structured entry.
@@ -385,6 +392,113 @@ async def _extract_ticket_id(branch_name: str) -> str | None:
     return None
 
 
+async def _get_summary_interval() -> int:
+    """Read the summary interval from settings, falling back to the default."""
+    raw = await db.get_setting("summary_interval")
+    if raw:
+        try:
+            val = json.loads(raw)
+            if isinstance(val, int) and val > 0:
+                return val
+        except (json.JSONDecodeError, TypeError):
+            pass
+    return SUMMARY_TRIGGER_INTERVAL
+
+
+async def _should_generate_summary(session_id: str, session: dict | None) -> bool:
+    """Check whether we should trigger an AI summary for this session."""
+    if not _claude_available:
+        return False
+    if not session:
+        return False
+    if session.get("display_name_locked"):
+        return False
+    if session.get("status") in ("completed", "stale"):
+        return False
+    if session.get("parent_session_id"):
+        return False
+    if session_id in _summary_tasks and not _summary_tasks[session_id].done():
+        return False
+    count = _user_message_counts.get(session_id, 0)
+    if count == 0:
+        return False
+    interval = await _get_summary_interval()
+    return count % interval == 0
+
+
+async def _generate_ai_summary(session_id: str) -> None:
+    """Run claude -p to generate an updated session title."""
+    global _claude_available
+    try:
+        session = await db.get_session(session_id)
+        if not session or session.get("display_name_locked"):
+            return
+
+        user_messages = await db.get_recent_user_messages(session_id, limit=SUMMARY_TRIGGER_INTERVAL)
+        if not user_messages:
+            return
+
+        git_branch = session.get("git_branch", "unknown")
+        current_title = session.get("display_name") or session.get("project_name") or ""
+
+        prompt = (
+            "You are a concise title generator for a coding session. "
+            "Based on the following context, generate a short title (3-8 words) "
+            "that captures what the developer is currently working on. "
+            "Return ONLY the title text, nothing else. No quotes, no explanation.\n\n"
+            f"Current title: {current_title}\n"
+            f"Git branch: {git_branch}\n"
+            f"Recent user messages:\n"
+        )
+        for i, msg in enumerate(user_messages, 1):
+            truncated = (msg or "")[:200]
+            prompt += f"{i}. {truncated}\n"
+
+        proc = await asyncio.create_subprocess_exec(
+            "claude",
+            "-p",
+            prompt,
+            stdout=asyncio.subprocess.PIPE,
+            stderr=asyncio.subprocess.PIPE,
+        )
+        stdout, stderr = await asyncio.wait_for(proc.communicate(), timeout=SUMMARY_SUBPROCESS_TIMEOUT)
+
+        if proc.returncode != 0:
+            logger.warning("claude -p failed for session %s: %s", session_id, stderr.decode()[:200])
+            return
+
+        new_title = stdout.decode().strip()
+
+        # Validate: non-empty, reasonable length, single line
+        if not new_title or len(new_title) > 100 or "\n" in new_title:
+            logger.warning("claude -p returned invalid title for %s: %r", session_id, new_title[:100])
+            return
+
+        # Re-check lock status (may have changed while subprocess ran)
+        session = await db.get_session(session_id)
+        if not session or session.get("display_name_locked"):
+            return
+
+        await db.update_session(session_id, display_name=new_title)
+
+        from server.routes.ws import broadcast_session_update
+
+        updated = await db.get_session(session_id)
+        if updated:
+            await broadcast_session_update(updated)
+        logger.info("AI summary updated title for %s: %s", session_id, new_title)
+
+    except TimeoutError:
+        logger.warning("claude -p timed out for session %s", session_id)
+    except FileNotFoundError:
+        logger.warning("claude command not found — AI summaries disabled")
+        _claude_available = False
+    except Exception:
+        logger.exception("Failed to generate AI summary for session %s", session_id)
+    finally:
+        _summary_tasks.pop(session_id, None)
+
+
 async def _process_file_changes(file_path: str):
     """Read new lines from a JSONL file and store as transcripts.
 
@@ -578,6 +692,19 @@ async def _process_file_changes(file_path: str):
         except Exception:
             pass  # Non-critical
 
+    # Count user messages for AI summary trigger
+    new_user_count = sum(1 for e in parsed_entries if e["role"] == "user")
+    if new_user_count > 0:
+        old_count = _user_message_counts.get(session_id, 0)
+        _user_message_counts[session_id] = old_count + new_user_count
+        new_total = _user_message_counts[session_id]
+        # Check if we crossed a summary threshold
+        interval = await _get_summary_interval()
+        if (old_count // interval) < (new_total // interval):
+            session_check = await db.get_session(session_id)
+            if await _should_generate_summary(session_id, session_check):
+                _summary_tasks[session_id] = asyncio.create_task(_generate_ai_summary(session_id))
+
 
 async def _debounced_process(file_path: str):
     """Debounce file processing to avoid excessive reads."""
@@ -637,3 +764,9 @@ def stop_watcher():
         if not task.done():
             task.cancel()
     _debounce_tasks.clear()
+    # Cancel in-flight summary tasks
+    for task in _summary_tasks.values():
+        if not task.done():
+            task.cancel()
+    _summary_tasks.clear()
+    _user_message_counts.clear()

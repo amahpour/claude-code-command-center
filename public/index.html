@@ -26,6 +26,7 @@
         </div>
       </div>
       <div class="topbar-actions">
+        <button class="btn btn-sm" id="expanded-view-btn" title="Toggle expanded view">Expanded</button>
         <button class="btn btn-sm" id="settings-btn" title="Settings">&#9881; Settings</button>
       </div>
     </header>
@@ -92,6 +93,7 @@
         <div class="settings-body">
           <div class="settings-sidebar">
             <button class="settings-tab active" data-tab="integrations">&#128279; Integrations</button>
+            <button class="settings-tab" data-tab="summaries">&#9881; AI Summaries</button>
           </div>
           <div class="settings-content">
             <div class="settings-panel active" id="tab-integrations">
@@ -106,6 +108,16 @@
                   <label for="jira-url">Server URL</label>
                   <input type="text" class="input" id="jira-url" placeholder="https://company.atlassian.net" />
                   <small class="form-hint">Your Atlassian Cloud URL or self-hosted Jira base URL. Ticket IDs will link to <code>{url}/browse/PROJ-42</code>.</small>
+                </div>
+              </div>
+            </div>
+            <div class="settings-panel" id="tab-summaries">
+              <div class="settings-section">
+                <div class="section-title">AI Session Summaries</div>
+                <div class="form-group">
+                  <label for="summary-interval">Update title every N user messages</label>
+                  <input type="number" class="input" id="summary-interval" min="1" max="100" value="5" />
+                  <small class="form-hint">Runs <code>claude -p</code> in the background to generate an evolving session title. Set to a higher number to reduce frequency. Requires the <code>claude</code> CLI to be available.</small>
                 </div>
               </div>
             </div>

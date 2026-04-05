@@ -5,6 +5,7 @@
 const Dashboard = {
   _expandedSubagentSections: new Set(),
   _expandedSubagentTranscripts: new Set(),
+  _expandedView: false,
 
   _emptyHTML: `<div class="empty-state" id="empty-state">
       <div class="empty-icon">&#9678;</div>
@@ -30,6 +31,10 @@ const Dashboard = {
     list.forEach(session => {
       grid.appendChild(this.createCard(session));
     });
+
+    if (this._expandedView) {
+      this._loadExpandedPreviews(list);
+    }
   },
 
   createCard(session) {
@@ -61,6 +66,9 @@ const Dashboard = {
           this._loadSubagentTranscript(agentId, container);
         }
       });
+      if (this._expandedView) {
+        this._fetchExpandedPreview(session.id);
+      }
     } else {
       // New session — add card
       const grid = document.getElementById('session-grid');
@@ -68,6 +76,9 @@ const Dashboard = {
       if (empty) empty.remove();
       const card = this.createCard(session);
       grid.prepend(card);
+      if (this._expandedView) {
+        this._fetchExpandedPreview(session.id);
+      }
     }
 
     // Remove completed sessions from active view after a delay
@@ -125,14 +136,21 @@ const Dashboard = {
     const lockIcon = isLocked ? '&#128274;' : '&#128275;';
     const lockTitle = isLocked ? 'Title locked (click to unlock)' : 'Title auto-updates (click to lock)';
 
-    const previewText = s.last_activity_preview || '';
-    const previewLine = previewText
-      ? `<div class="card-preview" onclick="event.stopPropagation(); Dashboard.togglePreview('${this._escapeHTML(s.id)}', this)">
-          <span class="preview-chevron">&#9656;</span>
-          <span class="preview-text">${this._escapeHTML(previewText)}</span>
-        </div>
-        <div class="card-preview-expanded" id="preview-${s.id}" style="display:none"></div>`
-      : '';
+    let previewLine = '';
+    if (this._expandedView) {
+      previewLine = `<div class="card-expanded-preview" id="expanded-preview-${s.id}">
+        <div class="expanded-loading">Loading...</div>
+      </div>`;
+    } else {
+      const previewText = s.last_activity_preview || '';
+      previewLine = previewText
+        ? `<div class="card-preview" onclick="event.stopPropagation(); Dashboard.togglePreview('${this._escapeHTML(s.id)}', this)">
+            <span class="preview-chevron">&#9656;</span>
+            <span class="preview-text">${this._escapeHTML(previewText)}</span>
+          </div>
+          <div class="card-preview-expanded" id="preview-${s.id}" style="display:none"></div>`
+        : '';
+    }
 
     return `
       <div class="card-header">
@@ -229,7 +247,7 @@ const Dashboard = {
       fetch(`/api/sessions/${sessionId}`, {
         method: 'PATCH',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ display_name: val.trim() || '' }),
+        body: JSON.stringify({ display_name: val.trim() || '', display_name_locked: true }),
       })
       .then(r => r.json())
       .then(data => {
@@ -375,6 +393,53 @@ const Dashboard = {
     this._loadSubagentTranscript(agentId, container);
     container.style.display = 'block';
     if (chevron) chevron.style.transform = 'rotate(90deg)';
+  },
+
+  initExpandedView() {
+    const stored = localStorage.getItem('cccc_expanded_view');
+    this._expandedView = stored === 'true';
+    const btn = document.getElementById('expanded-view-btn');
+    if (btn) {
+      if (this._expandedView) btn.classList.add('active');
+      btn.addEventListener('click', () => this.toggleExpandedView());
+    }
+    const grid = document.getElementById('session-grid');
+    if (grid && this._expandedView) grid.classList.add('expanded-view');
+  },
+
+  toggleExpandedView() {
+    this._expandedView = !this._expandedView;
+    localStorage.setItem('cccc_expanded_view', String(this._expandedView));
+    const btn = document.getElementById('expanded-view-btn');
+    if (btn) btn.classList.toggle('active', this._expandedView);
+    const grid = document.getElementById('session-grid');
+    if (grid) grid.classList.toggle('expanded-view', this._expandedView);
+    this.render(App.sessions);
+  },
+
+  _loadExpandedPreviews(sessions) {
+    sessions.forEach(s => this._fetchExpandedPreview(s.id));
+  },
+
+  async _fetchExpandedPreview(sessionId) {
+    const container = document.getElementById(`expanded-preview-${sessionId}`);
+    if (!container) return;
+    try {
+      const resp = await fetch(`/api/sessions/${sessionId}/transcript?limit=5`);
+      const data = await resp.json();
+      const msgs = data.transcripts || [];
+      if (msgs.length === 0) {
+        container.innerHTML = '<div class="expanded-loading">No activity yet</div>';
+        return;
+      }
+      container.innerHTML = msgs.map(t => {
+        const roleLabel = t.role === 'user' ? 'U' : t.role === 'assistant' ? 'A' : 'T';
+        const text = (t.content || '').substring(0, 200);
+        return `<div class="preview-msg"><span class="preview-role ${t.role}">${roleLabel}</span> ${this._escapeHTML(text)}</div>`;
+      }).join('');
+    } catch (e) {
+      container.innerHTML = '<div class="expanded-loading">Failed to load</div>';
+    }
   },
 
   async _loadSubagentTranscript(agentId, container) {

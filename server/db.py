@@ -372,6 +372,20 @@ async def get_session_transcripts(
     return [dict(r) for r in rows]
 
 
+async def get_recent_user_messages(session_id: str, limit: int = 10) -> list[str]:
+    """Get the most recent user messages for a session, in chronological order."""
+    conn = await get_db()
+    cursor = await conn.execute(
+        """SELECT content FROM transcripts
+           WHERE session_id = ? AND role = 'user'
+           ORDER BY id DESC
+           LIMIT ?""",
+        (session_id, limit),
+    )
+    rows = await cursor.fetchall()
+    return [row["content"] for row in list(rows)[::-1]]
+
+
 async def search_transcripts(query: str, limit: int = 50) -> list[dict]:
     """Full-text search across transcripts."""
     db = await get_db()

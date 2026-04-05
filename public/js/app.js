@@ -18,6 +18,7 @@ const App = {
     this.loadInitialData();
     this.loadSettings();
     this.setupHistory();
+    Dashboard.initExpandedView();
   },
 
   // ---- Browser History (back/forward) ----
@@ -105,6 +106,7 @@ const App = {
       const keys = this.settings.jira_project_keys || [];
       document.getElementById('jira-keys').value = keys.join(', ');
       document.getElementById('jira-url').value = this.settings.jira_server_url || '';
+      document.getElementById('summary-interval').value = this.settings.summary_interval || 5;
       indicator.textContent = '';
       indicator.className = 'save-indicator';
       modal.style.display = 'flex';
@@ -131,6 +133,7 @@ const App = {
       const keysRaw = document.getElementById('jira-keys').value;
       const keys = keysRaw.split(',').map(k => k.trim().toUpperCase()).filter(Boolean);
       const url = document.getElementById('jira-url').value.trim();
+      const summaryInterval = parseInt(document.getElementById('summary-interval').value, 10) || 5;
       try {
         const resp = await fetch('/api/settings', {
           method: 'PUT',
@@ -138,6 +141,7 @@ const App = {
           body: JSON.stringify({
             jira_project_keys: keys,
             jira_server_url: url || null,
+            summary_interval: summaryInterval,
           }),
         });
         const data = await resp.json();
