@@ -426,33 +426,97 @@ async def _should_generate_summary(session_id: str, session: dict | None) -> boo
     return count % interval == 0
 
 
+def _build_summary_prompt(session: dict, conversation: list[dict]) -> str:
+    """Build a structured prompt for session metadata extraction."""
+    current_title = session.get("display_name") or session.get("project_name") or "Untitled"
+    git_branch = session.get("git_branch") or "unknown"
+    current_ticket = session.get("ticket_id") or "none"
+    current_pr = session.get("pr_url") or "none"
+
+    lines = [
+        "You are a session metadata extractor for a coding dashboard.",
+        "",
+        "## Current Session State",
+        f"- Title: {current_title}",
+        f"- Git branch: {git_branch}",
+        f"- Ticket ID: {current_ticket}",
+        f"- PR URL: {current_pr}",
+        "",
+        "## Recent Activity",
+    ]
+
+    role_labels = {"user": "user", "assistant": "assistant"}
+    for i, msg in enumerate(conversation, 1):
+        role = role_labels.get(msg["role"], msg["role"])
+        content = (msg.get("content") or "")[:200]
+        lines.append(f"{i}. [{role}] {content}")
+
+    lines.extend(
+        [
+            "",
+            "## Task",
+            "Analyze the activity and return updated session metadata as JSON.",
+            "",
+            "## Output Schema",
+            "{",
+            '  "title": "3-8 word summary of current work",',
+            '  "ticket_id": "JIRA ticket ID (e.g. PROJ-42) or null if not found",',
+            '  "pr_url": "full PR/MR URL or null if not found"',
+            "}",
+            "",
+            "## Rules",
+            "- title: Always provide. Describe what the developer is working on right now.",
+            "- ticket_id: Extract only if explicitly mentioned in conversation. null otherwise.",
+            "- pr_url: Extract only if a full URL appears in conversation. null otherwise.",
+            "- Return ONLY valid JSON. No markdown fences, no explanation.",
+        ]
+    )
+
+    return "\n".join(lines)
+
+
+def _parse_summary_response(raw: str) -> dict | None:
+    """Parse the JSON response from claude -p, stripping markdown fences if present."""
+    text = raw.strip()
+    # Strip markdown code fences if the model wrapped its response
+    if text.startswith("```"):
+        # Remove opening fence (```json or ```)
+        text = text.split("\n", 1)[1] if "\n" in text else text[3:]
+    if text.endswith("```"):
+        text = text[:-3].rstrip()
+
+    try:
+        data = json.loads(text)
+    except (json.JSONDecodeError, ValueError):
+        return None
+
+    if not isinstance(data, dict):
+        return None
+
+    title = data.get("title")
+    if not isinstance(title, str) or not title or len(title) > 100:
+        return None
+
+    return {
+        "title": title.strip(),
+        "ticket_id": data.get("ticket_id") if isinstance(data.get("ticket_id"), str) else None,
+        "pr_url": data.get("pr_url") if isinstance(data.get("pr_url"), str) else None,
+    }
+
+
 async def _generate_ai_summary(session_id: str) -> None:
-    """Run claude -p to generate an updated session title."""
+    """Run claude -p to generate updated session metadata (title, ticket, PR)."""
     global _claude_available
     try:
         session = await db.get_session(session_id)
         if not session or session.get("display_name_locked"):
             return
 
-        user_messages = await db.get_recent_user_messages(session_id, limit=SUMMARY_TRIGGER_INTERVAL)
-        if not user_messages:
+        conversation = await db.get_recent_conversation(session_id, limit=5)
+        if not conversation:
             return
 
-        git_branch = session.get("git_branch", "unknown")
-        current_title = session.get("display_name") or session.get("project_name") or ""
-
-        prompt = (
-            "You are a concise title generator for a coding session. "
-            "Based on the following context, generate a short title (3-8 words) "
-            "that captures what the developer is currently working on. "
-            "Return ONLY the title text, nothing else. No quotes, no explanation.\n\n"
-            f"Current title: {current_title}\n"
-            f"Git branch: {git_branch}\n"
-            f"Recent user messages:\n"
-        )
-        for i, msg in enumerate(user_messages, 1):
-            truncated = (msg or "")[:200]
-            prompt += f"{i}. {truncated}\n"
+        prompt = _build_summary_prompt(session, conversation)
 
         proc = await asyncio.create_subprocess_exec(
             "claude",
@@ -467,11 +531,13 @@ async def _generate_ai_summary(session_id: str) -> None:
             logger.warning("claude -p failed for session %s: %s", session_id, stderr.decode()[:200])
             return
 
-        new_title = stdout.decode().strip()
-
-        # Validate: non-empty, reasonable length, single line
-        if not new_title or len(new_title) > 100 or "\n" in new_title:
-            logger.warning("claude -p returned invalid title for %s: %r", session_id, new_title[:100])
+        parsed = _parse_summary_response(stdout.decode())
+        if not parsed:
+            logger.warning(
+                "claude -p returned invalid response for %s: %r",
+                session_id,
+                stdout.decode()[:200],
+            )
             return
 
         # Re-check lock status (may have changed while subprocess ran)
@@ -479,14 +545,27 @@ async def _generate_ai_summary(session_id: str) -> None:
         if not session or session.get("display_name_locked"):
             return
 
-        await db.update_session(session_id, display_name=new_title)
+        updates: dict = {"display_name": parsed["title"]}
+        # Only fill in ticket_id and pr_url if not already set
+        if parsed["ticket_id"] and not session.get("ticket_id"):
+            updates["ticket_id"] = parsed["ticket_id"]
+        if parsed["pr_url"] and not session.get("pr_url"):
+            updates["pr_url"] = parsed["pr_url"]
+
+        await db.update_session(session_id, **updates)
 
         from server.routes.ws import broadcast_session_update
 
         updated = await db.get_session(session_id)
         if updated:
             await broadcast_session_update(updated)
-        logger.info("AI summary updated title for %s: %s", session_id, new_title)
+        logger.info(
+            "AI summary for %s: title=%r ticket=%s pr=%s",
+            session_id,
+            parsed["title"],
+            parsed["ticket_id"] or "-",
+            parsed["pr_url"] or "-",
+        )
 
     except TimeoutError:
         logger.warning("claude -p timed out for session %s", session_id)
