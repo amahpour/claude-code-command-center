@@ -247,7 +247,7 @@ const Dashboard = {
       fetch(`/api/sessions/${sessionId}`, {
         method: 'PATCH',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ display_name: val.trim() || '', display_name_locked: true }),
+        body: JSON.stringify(val.trim() ? { display_name: val.trim(), display_name_locked: true } : { display_name: '' }),
       })
       .then(r => r.json())
       .then(data => {
@@ -400,7 +400,7 @@ const Dashboard = {
     this._expandedView = stored === 'true';
     const btn = document.getElementById('expanded-view-btn');
     if (btn) {
-      if (this._expandedView) btn.classList.add('active');
+      this._updateExpandedBtn(btn);
       btn.addEventListener('click', () => this.toggleExpandedView());
     }
     const grid = document.getElementById('session-grid');
@@ -411,10 +411,15 @@ const Dashboard = {
     this._expandedView = !this._expandedView;
     localStorage.setItem('cccc_expanded_view', String(this._expandedView));
     const btn = document.getElementById('expanded-view-btn');
-    if (btn) btn.classList.toggle('active', this._expandedView);
+    if (btn) this._updateExpandedBtn(btn);
     const grid = document.getElementById('session-grid');
     if (grid) grid.classList.toggle('expanded-view', this._expandedView);
     this.render(App.sessions);
+  },
+
+  _updateExpandedBtn(btn) {
+    btn.classList.toggle('active', this._expandedView);
+    btn.textContent = this._expandedView ? 'Compact' : 'Expanded';
   },
 
   _loadExpandedPreviews(sessions) {
@@ -435,7 +440,7 @@ const Dashboard = {
       container.innerHTML = msgs.map(t => {
         const roleLabel = t.role === 'user' ? 'U' : t.role === 'assistant' ? 'A' : 'T';
         const text = (t.content || '').substring(0, 200);
-        return `<div class="preview-msg"><span class="preview-role ${t.role}">${roleLabel}</span> ${this._escapeHTML(text)}</div>`;
+        return `<div class="preview-msg"><span class="preview-role ${this._escapeHTML(t.role)}">${roleLabel}</span> ${this._escapeHTML(text)}</div>`;
       }).join('');
     } catch (e) {
       container.innerHTML = '<div class="expanded-loading">Failed to load</div>';

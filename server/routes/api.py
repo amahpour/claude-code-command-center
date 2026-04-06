@@ -160,6 +160,8 @@ async def update_settings(req: SettingsUpdate):
     if req.jira_server_url is not None:
         await db.set_setting("jira_server_url", json.dumps(req.jira_server_url))
     if req.summary_interval is not None:
+        if req.summary_interval < 1:
+            raise HTTPException(status_code=400, detail="summary_interval must be >= 1")
         await db.set_setting("summary_interval", json.dumps(req.summary_interval))
     return await get_settings()
 

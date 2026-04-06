@@ -1464,6 +1464,15 @@ def test_parse_summary_response_strips_plain_fences():
     assert result["title"] == "Debug Login"
 
 
+def test_parse_summary_response_strips_uppercase_json_fence():
+    from server.watcher import _parse_summary_response
+
+    raw = '```JSON\n{"title": "Uppercase Fence", "ticket_id": null, "pr_url": null}\n```'
+    result = _parse_summary_response(raw)
+    assert result is not None
+    assert result["title"] == "Uppercase Fence"
+
+
 def test_parse_summary_response_invalid_json():
     from server.watcher import _parse_summary_response
 

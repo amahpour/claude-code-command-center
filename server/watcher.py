@@ -478,9 +478,9 @@ def _build_summary_prompt(session: dict, conversation: list[dict]) -> str:
 def _parse_summary_response(raw: str) -> dict | None:
     """Parse the JSON response from claude -p, stripping markdown fences if present."""
     text = raw.strip()
-    # Strip markdown code fences if the model wrapped its response
-    if text.startswith("```"):
-        # Remove opening fence (```json or ```)
+    # Strip markdown code fences if the model wrapped its response (case-insensitive)
+    if text.lower().startswith("```"):
+        # Remove opening fence (```json, ```JSON, ```)
         text = text.split("\n", 1)[1] if "\n" in text else text[3:]
     if text.endswith("```"):
         text = text[:-3].rstrip()
@@ -521,11 +521,14 @@ async def _generate_ai_summary(session_id: str) -> None:
         proc = await asyncio.create_subprocess_exec(
             "claude",
             "-p",
-            prompt,
+            "-",
+            stdin=asyncio.subprocess.PIPE,
             stdout=asyncio.subprocess.PIPE,
             stderr=asyncio.subprocess.PIPE,
         )
-        stdout, stderr = await asyncio.wait_for(proc.communicate(), timeout=SUMMARY_SUBPROCESS_TIMEOUT)
+        stdout, stderr = await asyncio.wait_for(
+            proc.communicate(input=prompt.encode()), timeout=SUMMARY_SUBPROCESS_TIMEOUT
+        )
 
         if proc.returncode != 0:
             logger.warning("claude -p failed for session %s: %s", session_id, stderr.decode()[:200])
