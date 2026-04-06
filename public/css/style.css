@@ -415,6 +415,46 @@ body {
 .preview-role.assistant { background: rgba(124, 58, 237, 0.15); color: #c4b5fd; }
 .preview-role.tool_result { background: rgba(245, 158, 11, 0.15); color: #fcd34d; }
 
+/* Expanded view toggle */
+#expanded-view-btn.active {
+  background: var(--accent-muted);
+  border-color: var(--accent);
+  color: var(--accent-hover);
+}
+
+.card-expanded-preview {
+  margin: 6px 0 8px;
+  padding: 6px 8px;
+  background: var(--surface-2);
+  border-radius: var(--radius);
+  border-left: 2px solid var(--accent);
+  font-size: 11px;
+  max-height: 200px;
+  overflow-y: auto;
+}
+
+.card-expanded-preview .preview-msg {
+  padding: 3px 0;
+  color: var(--text-secondary);
+  line-height: 1.4;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.card-expanded-preview .preview-msg + .preview-msg {
+  border-top: 1px solid var(--border);
+}
+
+.card-expanded-preview .expanded-loading {
+  color: var(--text-muted);
+  font-style: italic;
+}
+
+.session-grid.expanded-view {
+  grid-template-columns: repeat(auto-fill, minmax(440px, 1fr));
+}
+
 .card-task {
   font-size: 12px;
   color: var(--text-secondary);

@@ -372,6 +372,24 @@ async def get_session_transcripts(
     return [dict(r) for r in rows]
 
 
+async def get_recent_conversation(session_id: str, limit: int = 5) -> list[dict]:
+    """Get the most recent user+assistant messages for a session, in chronological order.
+
+    Skips tool_result entries so the result captures intent and decisions,
+    not noisy tool output.
+    """
+    conn = await get_db()
+    cursor = await conn.execute(
+        """SELECT role, content FROM transcripts
+           WHERE session_id = ? AND role IN ('user', 'assistant')
+           ORDER BY id DESC
+           LIMIT ?""",
+        (session_id, limit),
+    )
+    rows = await cursor.fetchall()
+    return [dict(r) for r in list(rows)[::-1]]
+
+
 async def search_transcripts(query: str, limit: int = 50) -> list[dict]:
     """Full-text search across transcripts."""
     db = await get_db()

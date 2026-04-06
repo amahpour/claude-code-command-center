@@ -198,6 +198,32 @@ async def test_update_settings(client: AsyncClient):
     assert settings["jira_server_url"] == "https://jira.example.com"
 
 
+async def test_update_settings_summary_interval(client: AsyncClient):
+    resp = await client.put(
+        "/api/settings",
+        json={"summary_interval": 10},
+    )
+    assert resp.status_code == 200
+    settings = resp.json()["settings"]
+    assert settings["summary_interval"] == 10
+
+
+async def test_update_settings_summary_interval_invalid(client: AsyncClient):
+    resp = await client.put(
+        "/api/settings",
+        json={"summary_interval": 0},
+    )
+    assert resp.status_code == 400
+
+
+async def test_update_settings_summary_interval_negative(client: AsyncClient):
+    resp = await client.put(
+        "/api/settings",
+        json={"summary_interval": -5},
+    )
+    assert resp.status_code == 400
+
+
 async def test_get_settings_with_values(client: AsyncClient):
     await db.set_setting("jira_project_keys", '["PROJ"]')
     await db.set_setting("plain_key", "not-json")
