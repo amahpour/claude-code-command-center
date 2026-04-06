@@ -288,3 +288,53 @@ async def test_active_sessions_exclude_subagents():
     ids = [s["id"] for s in active]
     assert "active-parent" in ids
     assert "active-child" not in ids
+
+
+async def test_get_recent_conversation():
+    """get_recent_conversation returns user+assistant messages in chronological order."""
+    await db.create_session("conv-1")
+    await db.add_transcript("conv-1", "user", "Hello")
+    await db.add_transcript("conv-1", "assistant", "Hi there")
+    await db.add_transcript("conv-1", "tool_result", "File contents...")
+    await db.add_transcript("conv-1", "user", "Fix the bug")
+    await db.add_transcript("conv-1", "assistant", "I will fix it")
+
+    msgs = await db.get_recent_conversation("conv-1", limit=5)
+    assert len(msgs) == 4
+    assert msgs[0]["role"] == "user"
+    assert msgs[0]["content"] == "Hello"
+    assert msgs[3]["role"] == "assistant"
+    assert msgs[3]["content"] == "I will fix it"
+    # tool_result should be excluded
+    assert all(m["role"] in ("user", "assistant") for m in msgs)
+
+
+async def test_get_recent_conversation_limit():
+    """get_recent_conversation respects the limit parameter."""
+    await db.create_session("conv-2")
+    for i in range(10):
+        await db.add_transcript("conv-2", "user", f"Message {i}")
+        await db.add_transcript("conv-2", "assistant", f"Reply {i}")
+
+    msgs = await db.get_recent_conversation("conv-2", limit=3)
+    assert len(msgs) == 3
+    # Should be the 3 most recent, in chronological order
+    assert msgs[0]["content"] == "Reply 8"
+    assert msgs[1]["content"] == "Message 9"
+    assert msgs[2]["content"] == "Reply 9"
+
+
+async def test_get_recent_conversation_empty():
+    """get_recent_conversation returns empty list for no messages."""
+    await db.create_session("conv-3")
+    msgs = await db.get_recent_conversation("conv-3")
+    assert msgs == []
+
+
+async def test_get_recent_conversation_only_tool_results():
+    """get_recent_conversation returns empty if only tool_result messages exist."""
+    await db.create_session("conv-4")
+    await db.add_transcript("conv-4", "tool_result", "some output")
+    await db.add_transcript("conv-4", "tool_result", "more output")
+    msgs = await db.get_recent_conversation("conv-4")
+    assert msgs == []

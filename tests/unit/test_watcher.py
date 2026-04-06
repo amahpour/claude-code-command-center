@@ -1361,3 +1361,649 @@ async def test_process_file_fixes_orphaned_subagent():
         import shutil
 
         shutil.rmtree(parent_dir)
+
+
+# --- AI Summary: _build_summary_prompt ---
+
+
+def test_build_summary_prompt_basic():
+    from server.watcher import _build_summary_prompt
+
+    session = {
+        "display_name": "Auth Refactor",
+        "project_name": "myproject",
+        "git_branch": "feat/auth",
+        "ticket_id": "PROJ-42",
+        "pr_url": "https://github.com/org/repo/pull/7",
+    }
+    conversation = [
+        {"role": "user", "content": "Fix the auth middleware"},
+        {"role": "assistant", "content": "I will update the JWT handling"},
+    ]
+    prompt = _build_summary_prompt(session, conversation)
+    assert "Auth Refactor" in prompt
+    assert "feat/auth" in prompt
+    assert "PROJ-42" in prompt
+    assert "https://github.com/org/repo/pull/7" in prompt
+    assert "[user] Fix the auth middleware" in prompt
+    assert "[assistant] I will update the JWT handling" in prompt
+    assert '"title"' in prompt
+    assert '"ticket_id"' in prompt
+    assert '"pr_url"' in prompt
+
+
+def test_build_summary_prompt_missing_fields():
+    from server.watcher import _build_summary_prompt
+
+    session = {
+        "display_name": None,
+        "project_name": None,
+        "git_branch": None,
+        "ticket_id": None,
+        "pr_url": None,
+    }
+    prompt = _build_summary_prompt(session, [])
+    assert "Untitled" in prompt
+    assert "unknown" in prompt
+    assert "Ticket ID: none" in prompt
+    assert "PR URL: none" in prompt
+
+
+def test_build_summary_prompt_truncates_long_content():
+    from server.watcher import _build_summary_prompt
+
+    session = {"display_name": "Test", "git_branch": "main"}
+    long_msg = "x" * 500
+    conversation = [{"role": "user", "content": long_msg}]
+    prompt = _build_summary_prompt(session, conversation)
+    # Content should be truncated to 200 chars
+    assert "x" * 200 in prompt
+    assert "x" * 201 not in prompt
+
+
+# --- AI Summary: _parse_summary_response ---
+
+
+def test_parse_summary_response_valid():
+    from server.watcher import _parse_summary_response
+
+    raw = '{"title": "Fix Auth Bug", "ticket_id": "PROJ-42", "pr_url": "https://github.com/o/r/pull/1"}'
+    result = _parse_summary_response(raw)
+    assert result is not None
+    assert result["title"] == "Fix Auth Bug"
+    assert result["ticket_id"] == "PROJ-42"
+    assert result["pr_url"] == "https://github.com/o/r/pull/1"
+
+
+def test_parse_summary_response_nulls():
+    from server.watcher import _parse_summary_response
+
+    raw = '{"title": "Working on tests", "ticket_id": null, "pr_url": null}'
+    result = _parse_summary_response(raw)
+    assert result is not None
+    assert result["title"] == "Working on tests"
+    assert result["ticket_id"] is None
+    assert result["pr_url"] is None
+
+
+def test_parse_summary_response_strips_markdown_fences():
+    from server.watcher import _parse_summary_response
+
+    raw = '```json\n{"title": "Auth Refactor", "ticket_id": null, "pr_url": null}\n```'
+    result = _parse_summary_response(raw)
+    assert result is not None
+    assert result["title"] == "Auth Refactor"
+
+
+def test_parse_summary_response_strips_plain_fences():
+    from server.watcher import _parse_summary_response
+
+    raw = '```\n{"title": "Debug Login", "ticket_id": null, "pr_url": null}\n```'
+    result = _parse_summary_response(raw)
+    assert result is not None
+    assert result["title"] == "Debug Login"
+
+
+def test_parse_summary_response_invalid_json():
+    from server.watcher import _parse_summary_response
+
+    assert _parse_summary_response("not json at all") is None
+
+
+def test_parse_summary_response_missing_title():
+    from server.watcher import _parse_summary_response
+
+    assert _parse_summary_response('{"ticket_id": "X-1"}') is None
+
+
+def test_parse_summary_response_empty_title():
+    from server.watcher import _parse_summary_response
+
+    assert _parse_summary_response('{"title": "", "ticket_id": null, "pr_url": null}') is None
+
+
+def test_parse_summary_response_title_too_long():
+    from server.watcher import _parse_summary_response
+
+    long_title = "x" * 101
+    raw = json.dumps({"title": long_title, "ticket_id": None, "pr_url": None})
+    assert _parse_summary_response(raw) is None
+
+
+def test_parse_summary_response_non_dict():
+    from server.watcher import _parse_summary_response
+
+    assert _parse_summary_response("[1, 2, 3]") is None
+
+
+def test_parse_summary_response_non_string_ticket():
+    from server.watcher import _parse_summary_response
+
+    raw = '{"title": "Test", "ticket_id": 42, "pr_url": true}'
+    result = _parse_summary_response(raw)
+    assert result is not None
+    assert result["title"] == "Test"
+    assert result["ticket_id"] is None
+    assert result["pr_url"] is None
+
+
+def test_parse_summary_response_whitespace_title():
+    from server.watcher import _parse_summary_response
+
+    raw = '{"title": "  Fix Auth  ", "ticket_id": null, "pr_url": null}'
+    result = _parse_summary_response(raw)
+    assert result is not None
+    assert result["title"] == "Fix Auth"
+
+
+# --- AI Summary: _get_summary_interval ---
+
+
+async def test_get_summary_interval_default():
+    from server.watcher import SUMMARY_TRIGGER_INTERVAL, _get_summary_interval
+
+    result = await _get_summary_interval()
+    assert result == SUMMARY_TRIGGER_INTERVAL
+
+
+async def test_get_summary_interval_from_settings():
+    from server.watcher import _get_summary_interval
+
+    await db.set_setting("summary_interval", "10")
+    result = await _get_summary_interval()
+    assert result == 10
+
+
+async def test_get_summary_interval_invalid_json():
+    from server.watcher import SUMMARY_TRIGGER_INTERVAL, _get_summary_interval
+
+    await db.set_setting("summary_interval", "not-a-number")
+    result = await _get_summary_interval()
+    assert result == SUMMARY_TRIGGER_INTERVAL
+
+
+async def test_get_summary_interval_zero():
+    from server.watcher import SUMMARY_TRIGGER_INTERVAL, _get_summary_interval
+
+    await db.set_setting("summary_interval", "0")
+    result = await _get_summary_interval()
+    assert result == SUMMARY_TRIGGER_INTERVAL
+
+
+async def test_get_summary_interval_negative():
+    from server.watcher import SUMMARY_TRIGGER_INTERVAL, _get_summary_interval
+
+    await db.set_setting("summary_interval", "-5")
+    result = await _get_summary_interval()
+    assert result == SUMMARY_TRIGGER_INTERVAL
+
+
+async def test_get_summary_interval_float():
+    from server.watcher import SUMMARY_TRIGGER_INTERVAL, _get_summary_interval
+
+    await db.set_setting("summary_interval", "3.5")
+    result = await _get_summary_interval()
+    assert result == SUMMARY_TRIGGER_INTERVAL
+
+
+# --- AI Summary: _should_generate_summary ---
+
+
+async def test_should_generate_summary_happy_path():
+    import server.watcher as watcher_mod
+    from server.watcher import _should_generate_summary
+
+    watcher_mod._user_message_counts["s1"] = 5
+    watcher_mod._claude_available = True
+    session = {"status": "working", "display_name_locked": False, "parent_session_id": None}
+    assert await _should_generate_summary("s1", session) is True
+    watcher_mod._user_message_counts.pop("s1", None)
+
+
+async def test_should_generate_summary_not_on_threshold():
+    import server.watcher as watcher_mod
+    from server.watcher import _should_generate_summary
+
+    watcher_mod._user_message_counts["s2"] = 3
+    watcher_mod._claude_available = True
+    session = {"status": "working", "display_name_locked": False, "parent_session_id": None}
+    assert await _should_generate_summary("s2", session) is False
+    watcher_mod._user_message_counts.pop("s2", None)
+
+
+async def test_should_generate_summary_locked():
+    import server.watcher as watcher_mod
+    from server.watcher import _should_generate_summary
+
+    watcher_mod._user_message_counts["s3"] = 5
+    watcher_mod._claude_available = True
+    session = {"status": "working", "display_name_locked": True, "parent_session_id": None}
+    assert await _should_generate_summary("s3", session) is False
+    watcher_mod._user_message_counts.pop("s3", None)
+
+
+async def test_should_generate_summary_completed():
+    import server.watcher as watcher_mod
+    from server.watcher import _should_generate_summary
+
+    watcher_mod._user_message_counts["s4"] = 5
+    watcher_mod._claude_available = True
+    session = {"status": "completed", "display_name_locked": False, "parent_session_id": None}
+    assert await _should_generate_summary("s4", session) is False
+    watcher_mod._user_message_counts.pop("s4", None)
+
+
+async def test_should_generate_summary_stale():
+    import server.watcher as watcher_mod
+    from server.watcher import _should_generate_summary
+
+    watcher_mod._user_message_counts["s5"] = 5
+    watcher_mod._claude_available = True
+    session = {"status": "stale", "display_name_locked": False, "parent_session_id": None}
+    assert await _should_generate_summary("s5", session) is False
+    watcher_mod._user_message_counts.pop("s5", None)
+
+
+async def test_should_generate_summary_subagent():
+    import server.watcher as watcher_mod
+    from server.watcher import _should_generate_summary
+
+    watcher_mod._user_message_counts["s6"] = 5
+    watcher_mod._claude_available = True
+    session = {"status": "working", "display_name_locked": False, "parent_session_id": "parent-1"}
+    assert await _should_generate_summary("s6", session) is False
+    watcher_mod._user_message_counts.pop("s6", None)
+
+
+async def test_should_generate_summary_claude_unavailable():
+    import server.watcher as watcher_mod
+    from server.watcher import _should_generate_summary
+
+    watcher_mod._user_message_counts["s7"] = 5
+    watcher_mod._claude_available = False
+    session = {"status": "working", "display_name_locked": False, "parent_session_id": None}
+    assert await _should_generate_summary("s7", session) is False
+    watcher_mod._claude_available = True
+    watcher_mod._user_message_counts.pop("s7", None)
+
+
+async def test_should_generate_summary_no_session():
+    from server.watcher import _should_generate_summary
+
+    assert await _should_generate_summary("s8", None) is False
+
+
+async def test_should_generate_summary_zero_count():
+    import server.watcher as watcher_mod
+    from server.watcher import _should_generate_summary
+
+    watcher_mod._user_message_counts["s9"] = 0
+    watcher_mod._claude_available = True
+    session = {"status": "working", "display_name_locked": False, "parent_session_id": None}
+    assert await _should_generate_summary("s9", session) is False
+    watcher_mod._user_message_counts.pop("s9", None)
+
+
+async def test_should_generate_summary_task_inflight():
+    import server.watcher as watcher_mod
+    from server.watcher import _should_generate_summary
+
+    watcher_mod._user_message_counts["s10"] = 5
+    watcher_mod._claude_available = True
+    mock_task = MagicMock()
+    mock_task.done.return_value = False
+    watcher_mod._summary_tasks["s10"] = mock_task
+    session = {"status": "working", "display_name_locked": False, "parent_session_id": None}
+    assert await _should_generate_summary("s10", session) is False
+    watcher_mod._summary_tasks.pop("s10", None)
+    watcher_mod._user_message_counts.pop("s10", None)
+
+
+# --- AI Summary: _generate_ai_summary ---
+
+
+async def test_generate_ai_summary_success():
+    from server.watcher import _generate_ai_summary
+
+    await db.create_session("gen-1", project_path="/tmp/proj")
+    await db.update_session("gen-1", git_branch="feat/auth", status="working")
+    await db.add_transcript("gen-1", "user", "Fix the auth bug")
+    await db.add_transcript("gen-1", "assistant", "I will fix the JWT validation")
+
+    mock_proc = AsyncMock()
+    mock_proc.returncode = 0
+    mock_proc.communicate.return_value = (
+        b'{"title": "Fix JWT Auth", "ticket_id": "AUTH-99", "pr_url": null}',
+        b"",
+    )
+
+    with (
+        patch("asyncio.create_subprocess_exec", new_callable=AsyncMock, return_value=mock_proc),
+        patch("asyncio.wait_for", new_callable=AsyncMock, return_value=mock_proc.communicate.return_value),
+        patch("server.routes.ws.broadcast_session_update", new_callable=AsyncMock),
+    ):
+        await _generate_ai_summary("gen-1")
+
+    session = await db.get_session("gen-1")
+    assert session["display_name"] == "Fix JWT Auth"
+    assert session["ticket_id"] == "AUTH-99"
+
+
+async def test_generate_ai_summary_does_not_overwrite_existing_ticket():
+    from server.watcher import _generate_ai_summary
+
+    await db.create_session("gen-2", project_path="/tmp/proj")
+    await db.update_session("gen-2", ticket_id="EXISTING-1", status="working")
+    await db.add_transcript("gen-2", "user", "Some work")
+
+    mock_proc = AsyncMock()
+    mock_proc.returncode = 0
+    mock_proc.communicate.return_value = (
+        b'{"title": "New Title", "ticket_id": "OTHER-2", "pr_url": "https://github.com/o/r/pull/5"}',
+        b"",
+    )
+
+    with (
+        patch("asyncio.create_subprocess_exec", new_callable=AsyncMock, return_value=mock_proc),
+        patch("asyncio.wait_for", new_callable=AsyncMock, return_value=mock_proc.communicate.return_value),
+        patch("server.routes.ws.broadcast_session_update", new_callable=AsyncMock),
+    ):
+        await _generate_ai_summary("gen-2")
+
+    session = await db.get_session("gen-2")
+    assert session["display_name"] == "New Title"
+    assert session["ticket_id"] == "EXISTING-1"  # NOT overwritten
+    assert session["pr_url"] == "https://github.com/o/r/pull/5"  # Filled in
+
+
+async def test_generate_ai_summary_locked_session():
+    from server.watcher import _generate_ai_summary
+
+    await db.create_session("gen-3", project_path="/tmp/proj")
+    await db.update_session("gen-3", display_name_locked=1, display_name="Locked Title")
+    await db.add_transcript("gen-3", "user", "Some work")
+
+    with patch("asyncio.create_subprocess_exec", new_callable=AsyncMock) as mock_exec:
+        await _generate_ai_summary("gen-3")
+        mock_exec.assert_not_called()
+
+    session = await db.get_session("gen-3")
+    assert session["display_name"] == "Locked Title"
+
+
+async def test_generate_ai_summary_no_conversation():
+    from server.watcher import _generate_ai_summary
+
+    await db.create_session("gen-4", project_path="/tmp/proj")
+    # No transcripts added
+
+    with patch("asyncio.create_subprocess_exec", new_callable=AsyncMock) as mock_exec:
+        await _generate_ai_summary("gen-4")
+        mock_exec.assert_not_called()
+
+
+async def test_generate_ai_summary_subprocess_failure():
+    from server.watcher import _generate_ai_summary
+
+    await db.create_session("gen-5", project_path="/tmp/proj")
+    await db.update_session("gen-5", status="working")
+    await db.add_transcript("gen-5", "user", "Do something")
+
+    mock_proc = AsyncMock()
+    mock_proc.returncode = 1
+    mock_proc.communicate.return_value = (b"", b"Error: something went wrong")
+
+    with (
+        patch("asyncio.create_subprocess_exec", new_callable=AsyncMock, return_value=mock_proc),
+        patch("asyncio.wait_for", new_callable=AsyncMock, return_value=mock_proc.communicate.return_value),
+    ):
+        await _generate_ai_summary("gen-5")
+
+    session = await db.get_session("gen-5")
+    assert session["display_name"] is None  # Not updated
+
+
+async def test_generate_ai_summary_invalid_response():
+    from server.watcher import _generate_ai_summary
+
+    await db.create_session("gen-6", project_path="/tmp/proj")
+    await db.update_session("gen-6", status="working")
+    await db.add_transcript("gen-6", "user", "Do something")
+
+    mock_proc = AsyncMock()
+    mock_proc.returncode = 0
+    mock_proc.communicate.return_value = (b"This is not JSON", b"")
+
+    with (
+        patch("asyncio.create_subprocess_exec", new_callable=AsyncMock, return_value=mock_proc),
+        patch("asyncio.wait_for", new_callable=AsyncMock, return_value=mock_proc.communicate.return_value),
+    ):
+        await _generate_ai_summary("gen-6")
+
+    session = await db.get_session("gen-6")
+    assert session["display_name"] is None
+
+
+async def test_generate_ai_summary_timeout():
+    from server.watcher import _generate_ai_summary
+
+    await db.create_session("gen-7", project_path="/tmp/proj")
+    await db.update_session("gen-7", status="working")
+    await db.add_transcript("gen-7", "user", "Do something")
+
+    mock_proc = AsyncMock()
+
+    with (
+        patch("asyncio.create_subprocess_exec", new_callable=AsyncMock, return_value=mock_proc),
+        patch("asyncio.wait_for", new_callable=AsyncMock, side_effect=TimeoutError),
+    ):
+        await _generate_ai_summary("gen-7")  # Should not raise
+
+    session = await db.get_session("gen-7")
+    assert session["display_name"] is None
+
+
+async def test_generate_ai_summary_claude_not_found():
+    import server.watcher as watcher_mod
+    from server.watcher import _generate_ai_summary
+
+    watcher_mod._claude_available = True
+    await db.create_session("gen-8", project_path="/tmp/proj")
+    await db.update_session("gen-8", status="working")
+    await db.add_transcript("gen-8", "user", "Do something")
+
+    with patch("asyncio.create_subprocess_exec", new_callable=AsyncMock, side_effect=FileNotFoundError):
+        await _generate_ai_summary("gen-8")
+
+    assert watcher_mod._claude_available is False
+    watcher_mod._claude_available = True
+
+
+async def test_generate_ai_summary_locked_during_subprocess():
+    """If title gets locked while subprocess runs, update should be skipped."""
+    from server.watcher import _generate_ai_summary
+
+    await db.create_session("gen-9", project_path="/tmp/proj")
+    await db.update_session("gen-9", status="working")
+    await db.add_transcript("gen-9", "user", "Do something")
+
+    mock_proc = AsyncMock()
+    mock_proc.returncode = 0
+    mock_proc.communicate.return_value = (
+        b'{"title": "New Title", "ticket_id": null, "pr_url": null}',
+        b"",
+    )
+
+    call_count = 0
+
+    async def fake_wait_for(*args, **kwargs):
+        nonlocal call_count
+        call_count += 1
+        # Simulate user locking the title while subprocess was running
+        await db.update_session("gen-9", display_name_locked=1, display_name="User Title")
+        return mock_proc.communicate.return_value
+
+    with (
+        patch("asyncio.create_subprocess_exec", new_callable=AsyncMock, return_value=mock_proc),
+        patch("asyncio.wait_for", side_effect=fake_wait_for),
+        patch("server.routes.ws.broadcast_session_update", new_callable=AsyncMock),
+    ):
+        await _generate_ai_summary("gen-9")
+
+    session = await db.get_session("gen-9")
+    assert session["display_name"] == "User Title"  # Not overwritten
+
+
+async def test_generate_ai_summary_cleans_up_task():
+    """Summary task should be removed from _summary_tasks when complete."""
+    import server.watcher as watcher_mod
+    from server.watcher import _generate_ai_summary
+
+    await db.create_session("gen-10", project_path="/tmp/proj")
+    await db.update_session("gen-10", status="working")
+    await db.add_transcript("gen-10", "user", "Do something")
+    watcher_mod._summary_tasks["gen-10"] = MagicMock()
+
+    mock_proc = AsyncMock()
+    mock_proc.returncode = 0
+    mock_proc.communicate.return_value = (
+        b'{"title": "Done", "ticket_id": null, "pr_url": null}',
+        b"",
+    )
+
+    with (
+        patch("asyncio.create_subprocess_exec", new_callable=AsyncMock, return_value=mock_proc),
+        patch("asyncio.wait_for", new_callable=AsyncMock, return_value=mock_proc.communicate.return_value),
+        patch("server.routes.ws.broadcast_session_update", new_callable=AsyncMock),
+    ):
+        await _generate_ai_summary("gen-10")
+
+    assert "gen-10" not in watcher_mod._summary_tasks
+
+
+# --- AI Summary: counting in _process_file_changes ---
+
+
+async def test_process_file_counts_user_messages_for_summary():
+    """User message counting should trigger summary at threshold."""
+    import server.watcher as watcher_mod
+
+    watcher_mod._user_message_counts.clear()
+    watcher_mod._claude_available = True
+
+    lines = []
+    for i in range(5):
+        lines.append(
+            json.dumps(
+                {
+                    "type": "user",
+                    "message": {"role": "user", "content": f"Message number {i + 1} from the user"},
+                }
+            )
+        )
+        lines.append(
+            json.dumps(
+                {
+                    "type": "assistant",
+                    "message": {"role": "assistant", "content": f"Reply {i + 1}"},
+                }
+            )
+        )
+
+    with tempfile.NamedTemporaryFile(mode="w", suffix=".jsonl", delete=False, dir=tempfile.gettempdir()) as f:
+        f.write("\n".join(lines) + "\n")
+        tmp_path = f.name
+
+    session_id = os.path.splitext(os.path.basename(tmp_path))[0]
+
+    try:
+        with (
+            patch("server.routes.ws.broadcast_session_update", new_callable=AsyncMock),
+            patch("server.watcher._generate_ai_summary", new_callable=AsyncMock) as mock_gen,
+        ):
+            await _process_file_changes(tmp_path)
+
+        assert watcher_mod._user_message_counts[session_id] == 5
+        mock_gen.assert_called_once_with(session_id)
+    finally:
+        os.unlink(tmp_path)
+        watcher_mod._user_message_counts.pop(session_id, None)
+
+
+async def test_process_file_no_summary_below_threshold():
+    """Summary should not trigger below the threshold."""
+    import server.watcher as watcher_mod
+
+    watcher_mod._user_message_counts.clear()
+    watcher_mod._claude_available = True
+
+    lines = []
+    for i in range(3):
+        lines.append(
+            json.dumps(
+                {
+                    "type": "user",
+                    "message": {"role": "user", "content": f"Message {i + 1} here"},
+                }
+            )
+        )
+
+    with tempfile.NamedTemporaryFile(mode="w", suffix=".jsonl", delete=False, dir=tempfile.gettempdir()) as f:
+        f.write("\n".join(lines) + "\n")
+        tmp_path = f.name
+
+    session_id = os.path.splitext(os.path.basename(tmp_path))[0]
+
+    try:
+        with (
+            patch("server.routes.ws.broadcast_session_update", new_callable=AsyncMock),
+            patch("server.watcher._generate_ai_summary", new_callable=AsyncMock) as mock_gen,
+        ):
+            await _process_file_changes(tmp_path)
+
+        assert watcher_mod._user_message_counts[session_id] == 3
+        mock_gen.assert_not_called()
+    finally:
+        os.unlink(tmp_path)
+        watcher_mod._user_message_counts.pop(session_id, None)
+
+
+# --- stop_watcher cleans up summary state ---
+
+
+def test_stop_watcher_cleans_up_summary_tasks():
+    import server.watcher as watcher_mod
+    from server.watcher import stop_watcher
+
+    watcher_mod._watcher_task = None
+
+    mock_summary = MagicMock()
+    mock_summary.done.return_value = False
+    watcher_mod._summary_tasks["test-sess"] = mock_summary
+    watcher_mod._user_message_counts["test-sess"] = 10
+
+    stop_watcher()
+
+    mock_summary.cancel.assert_called_once()
+    assert len(watcher_mod._summary_tasks) == 0
+    assert len(watcher_mod._user_message_counts) == 0
