@@ -1525,6 +1525,116 @@ def test_parse_summary_response_whitespace_title():
     assert result["title"] == "Fix Auth"
 
 
+def test_parse_summary_response_valid_github_pr_url():
+    from server.watcher import _parse_summary_response
+
+    raw = json.dumps({"title": "Test", "ticket_id": None, "pr_url": "https://github.com/org/repo/pull/42"})
+    result = _parse_summary_response(raw)
+    assert result["pr_url"] == "https://github.com/org/repo/pull/42"
+
+
+def test_parse_summary_response_valid_gitlab_mr_url():
+    from server.watcher import _parse_summary_response
+
+    raw = json.dumps({"title": "Test", "ticket_id": None, "pr_url": "https://gitlab.com/org/repo/-/merge_requests/7"})
+    result = _parse_summary_response(raw)
+    assert result["pr_url"] == "https://gitlab.com/org/repo/-/merge_requests/7"
+
+
+def test_parse_summary_response_rejects_javascript_url():
+    from server.watcher import _parse_summary_response
+
+    raw = json.dumps({"title": "Test", "ticket_id": None, "pr_url": "javascript:alert(1)"})
+    result = _parse_summary_response(raw)
+    assert result["pr_url"] is None
+
+
+def test_parse_summary_response_rejects_http_url():
+    from server.watcher import _parse_summary_response
+
+    raw = json.dumps({"title": "Test", "ticket_id": None, "pr_url": "http://github.com/org/repo/pull/1"})
+    result = _parse_summary_response(raw)
+    assert result["pr_url"] is None
+
+
+def test_parse_summary_response_rejects_arbitrary_https_url():
+    from server.watcher import _parse_summary_response
+
+    raw = json.dumps({"title": "Test", "ticket_id": None, "pr_url": "https://evil.com/phish"})
+    result = _parse_summary_response(raw)
+    assert result["pr_url"] is None
+
+
+def test_parse_summary_response_rejects_non_pr_path():
+    from server.watcher import _parse_summary_response
+
+    raw = json.dumps({"title": "Test", "ticket_id": None, "pr_url": "https://github.com/org/repo/issues/5"})
+    result = _parse_summary_response(raw)
+    assert result["pr_url"] is None
+
+
+# --- AI Summary: subprocess reaping ---
+
+
+async def test_generate_ai_summary_kills_subprocess_on_timeout():
+    from server.watcher import _generate_ai_summary
+
+    await db.create_session("reap-1", project_path="/tmp/proj")
+    await db.update_session("reap-1", status="working")
+    await db.add_transcript("reap-1", "user", "Do something")
+
+    mock_proc = AsyncMock()
+    mock_proc.returncode = None  # Still running
+
+    with (
+        patch("asyncio.create_subprocess_exec", new_callable=AsyncMock, return_value=mock_proc),
+        patch("asyncio.wait_for", new_callable=AsyncMock, side_effect=TimeoutError),
+    ):
+        await _generate_ai_summary("reap-1")
+
+    mock_proc.kill.assert_called_once()
+    mock_proc.wait.assert_called_once()
+
+
+async def test_generate_ai_summary_kills_subprocess_on_exception():
+    from server.watcher import _generate_ai_summary
+
+    await db.create_session("reap-2", project_path="/tmp/proj")
+    await db.update_session("reap-2", status="working")
+    await db.add_transcript("reap-2", "user", "Do something")
+
+    mock_proc = AsyncMock()
+    mock_proc.returncode = None
+
+    with (
+        patch("asyncio.create_subprocess_exec", new_callable=AsyncMock, return_value=mock_proc),
+        patch("asyncio.wait_for", new_callable=AsyncMock, side_effect=RuntimeError("boom")),
+    ):
+        await _generate_ai_summary("reap-2")
+
+    mock_proc.kill.assert_called_once()
+
+
+async def test_generate_ai_summary_skips_kill_if_already_exited():
+    from server.watcher import _generate_ai_summary
+
+    await db.create_session("reap-3", project_path="/tmp/proj")
+    await db.update_session("reap-3", status="working")
+    await db.add_transcript("reap-3", "user", "Do something")
+
+    mock_proc = AsyncMock()
+    mock_proc.returncode = 0  # Already exited
+
+    with (
+        patch("asyncio.create_subprocess_exec", new_callable=AsyncMock, return_value=mock_proc),
+        patch("asyncio.wait_for", new_callable=AsyncMock, side_effect=TimeoutError),
+    ):
+        await _generate_ai_summary("reap-3")
+
+    # returncode is not None, so kill should not be called
+    mock_proc.kill.assert_not_called()
+
+
 # --- AI Summary: _get_summary_interval ---
 
 

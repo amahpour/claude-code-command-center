@@ -497,16 +497,34 @@ def _parse_summary_response(raw: str) -> dict | None:
     if not isinstance(title, str) or not title or len(title) > 100:
         return None
 
+    # Validate pr_url: must be https with a PR/MR path shape
+    pr_url = data.get("pr_url") if isinstance(data.get("pr_url"), str) else None
+    if pr_url and not re.match(r"^https://[^/]+/.+/(?:pull|merge_requests)/\d+", pr_url):
+        pr_url = None
+
     return {
         "title": title.strip(),
         "ticket_id": data.get("ticket_id") if isinstance(data.get("ticket_id"), str) else None,
-        "pr_url": data.get("pr_url") if isinstance(data.get("pr_url"), str) else None,
+        "pr_url": pr_url,
     }
+
+
+async def _kill_subprocess(proc: asyncio.subprocess.Process) -> None:
+    """Terminate a subprocess and wait for it to be reaped."""
+    try:
+        proc.kill()
+    except (ProcessLookupError, OSError):
+        pass  # Already exited
+    try:
+        await proc.wait()
+    except Exception:
+        pass
 
 
 async def _generate_ai_summary(session_id: str) -> None:
     """Run claude -p to generate updated session metadata (title, ticket, PR)."""
     global _claude_available
+    proc: asyncio.subprocess.Process | None = None
     try:
         session = await db.get_session(session_id)
         if not session or session.get("display_name_locked"):
@@ -572,11 +590,15 @@ async def _generate_ai_summary(session_id: str) -> None:
 
     except TimeoutError:
         logger.warning("claude -p timed out for session %s", session_id)
+        if proc and proc.returncode is None:
+            await _kill_subprocess(proc)
     except FileNotFoundError:
         logger.warning("claude command not found — AI summaries disabled")
         _claude_available = False
     except Exception:
         logger.exception("Failed to generate AI summary for session %s", session_id)
+        if proc and proc.returncode is None:
+            await _kill_subprocess(proc)
     finally:
         _summary_tasks.pop(session_id, None)
 
