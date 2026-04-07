@@ -150,6 +150,7 @@ const App = {
         const data = await resp.json();
         this.settings = data.settings || {};
         closeModal();
+        Dashboard.render(this.sessions);
       } catch (e) {
         console.error('Failed to save settings:', e);
         indicator.textContent = 'Failed to save';
