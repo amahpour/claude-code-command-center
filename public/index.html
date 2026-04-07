@@ -94,6 +94,7 @@
           <div class="settings-sidebar">
             <button class="settings-tab active" data-tab="integrations">&#128279; Integrations</button>
             <button class="settings-tab" data-tab="summaries">&#9881; AI Summaries</button>
+            <button class="settings-tab" data-tab="dashboard">&#9638; Dashboard</button>
           </div>
           <div class="settings-content">
             <div class="settings-panel active" id="tab-integrations">
@@ -118,6 +119,16 @@
                   <label for="summary-interval">Update title every N user messages</label>
                   <input type="number" class="input" id="summary-interval" min="1" max="100" value="5" />
                   <small class="form-hint">Runs <code>claude -p</code> in the background to generate an evolving session title. Set to a higher number to reduce frequency. Requires the <code>claude</code> CLI to be available.</small>
+                </div>
+              </div>
+            </div>
+            <div class="settings-panel" id="tab-dashboard">
+              <div class="settings-section">
+                <div class="section-title">Expanded View</div>
+                <div class="form-group">
+                  <label for="expanded-tile-items">Transcript items per tile</label>
+                  <input type="number" class="input" id="expanded-tile-items" min="1" max="50" value="5" />
+                  <small class="form-hint">Number of recent transcript messages shown in each expanded tile.</small>
                 </div>
               </div>
             </div>
