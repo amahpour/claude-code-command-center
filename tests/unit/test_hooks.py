@@ -1025,3 +1025,175 @@ async def test_stale_checker_logs_warning_for_long_waiting():
 
     mock_logger.warning.assert_called_once()
     assert "stale-warn-1" in mock_logger.warning.call_args[0][1]
+
+
+async def test_check_stale_subagents_marks_completed():
+    """_check_stale_subagents should mark inactive subagents as completed."""
+    from server.hooks import _check_stale_subagents
+
+    old_time = (datetime.now(UTC) - timedelta(minutes=10)).isoformat()
+    await db.create_session("parent-sub-stale")
+    await db.update_session("parent-sub-stale", status="working")
+    await db.create_session("sub-stale-1")
+    await db.update_session(
+        "sub-stale-1",
+        parent_session_id="parent-sub-stale",
+        status="working",
+        last_activity_at=old_time,
+    )
+
+    with patch("server.hooks._on_session_update", new=None):
+        await _check_stale_subagents(datetime.now(UTC))
+
+    sub = await db.get_session("sub-stale-1")
+    assert sub["status"] == "completed"
+    assert sub["ended_at"] is not None
+
+
+async def test_check_stale_subagents_skips_recent():
+    """_check_stale_subagents should not touch recently active subagents."""
+    from server.hooks import _check_stale_subagents
+
+    recent_time = datetime.now(UTC).isoformat()
+    await db.create_session("parent-sub-recent")
+    await db.create_session("sub-recent-1")
+    await db.update_session(
+        "sub-recent-1",
+        parent_session_id="parent-sub-recent",
+        status="working",
+        last_activity_at=recent_time,
+    )
+
+    await _check_stale_subagents(datetime.now(UTC))
+
+    sub = await db.get_session("sub-recent-1")
+    assert sub["status"] == "working"
+
+
+async def test_check_stale_subagents_broadcasts_parent():
+    """_check_stale_subagents should broadcast parent update when subagent completes."""
+    from server.hooks import _check_stale_subagents, set_update_callback
+
+    old_time = (datetime.now(UTC) - timedelta(minutes=10)).isoformat()
+    await db.create_session("parent-sub-bc")
+    await db.update_session("parent-sub-bc", status="working")
+    await db.create_session("sub-bc-1")
+    await db.update_session(
+        "sub-bc-1",
+        parent_session_id="parent-sub-bc",
+        status="working",
+        last_activity_at=old_time,
+    )
+
+    callback = AsyncMock()
+    set_update_callback(callback)
+
+    try:
+        await _check_stale_subagents(datetime.now(UTC))
+        assert callback.call_count >= 1
+        # The parent session should have been broadcast
+        updated_session = callback.call_args[0][0]
+        assert updated_session["id"] == "parent-sub-bc"
+        assert "subagents" in updated_session
+    finally:
+        set_update_callback(None)
+
+
+async def test_check_stale_subagents_no_last_activity():
+    """_check_stale_subagents should skip subagents without last_activity_at."""
+    from server.hooks import _check_stale_subagents
+
+    await db.create_session("parent-sub-nola")
+    await db.create_session("sub-nola-1")
+    await db.update_session(
+        "sub-nola-1",
+        parent_session_id="parent-sub-nola",
+        status="working",
+        last_activity_at=None,
+    )
+
+    # Verify last_activity_at is actually None
+    sub_before = await db.get_session("sub-nola-1")
+    assert sub_before["last_activity_at"] is None
+
+    await _check_stale_subagents(datetime.now(UTC))
+
+    sub = await db.get_session("sub-nola-1")
+    assert sub["status"] == "working"
+
+
+async def test_check_stale_subagents_timezone_naive():
+    """_check_stale_subagents should handle timezone-naive timestamps."""
+    from server.hooks import _check_stale_subagents
+
+    # Use a naive timestamp (no timezone info) that is old enough to be stale
+    old_naive = (datetime.now(UTC) - timedelta(minutes=10)).strftime("%Y-%m-%dT%H:%M:%S")
+    await db.create_session("parent-sub-naive")
+    await db.update_session("parent-sub-naive", status="working")
+    await db.create_session("sub-naive-1")
+    await db.update_session(
+        "sub-naive-1",
+        parent_session_id="parent-sub-naive",
+        status="working",
+        last_activity_at=old_naive,
+    )
+
+    with patch("server.hooks._on_session_update", new=None):
+        await _check_stale_subagents(datetime.now(UTC))
+
+    sub = await db.get_session("sub-naive-1")
+    assert sub["status"] == "completed"
+
+
+async def test_check_stale_subagents_invalid_timestamp():
+    """_check_stale_subagents should handle invalid timestamps gracefully."""
+    from server.hooks import _check_stale_subagents
+
+    await db.create_session("parent-sub-bad")
+    await db.create_session("sub-bad-ts")
+    await db.update_session(
+        "sub-bad-ts",
+        parent_session_id="parent-sub-bad",
+        status="working",
+        last_activity_at="not-a-timestamp",
+    )
+
+    # Should not crash
+    await _check_stale_subagents(datetime.now(UTC))
+
+    sub = await db.get_session("sub-bad-ts")
+    assert sub["status"] == "working"
+
+
+async def test_check_stale_sessions_skips_working_subagent():
+    """_check_stale_sessions should not mark a session stale if it has working subagents."""
+    import server.hooks as hooks_mod
+    from server.hooks import _check_stale_sessions
+
+    old_time = (datetime.now(UTC) - timedelta(minutes=10)).isoformat()
+    await db.create_session("parent-with-sub")
+    await db.update_session("parent-with-sub", status="working", last_activity_at=old_time)
+    await db.create_session("sub-active-1")
+    await db.update_session(
+        "sub-active-1",
+        parent_session_id="parent-with-sub",
+        status="working",
+        last_activity_at=datetime.now(UTC).isoformat(),
+    )
+
+    call_count = 0
+
+    async def mock_sleep(seconds):
+        nonlocal call_count
+        call_count += 1
+        if call_count > 1:
+            raise asyncio.CancelledError()
+
+    with patch("asyncio.sleep", side_effect=mock_sleep), patch.object(hooks_mod, "_on_session_update", new=None):
+        try:
+            await _check_stale_sessions()
+        except asyncio.CancelledError:
+            pass
+
+    parent = await db.get_session("parent-with-sub")
+    assert parent["status"] == "working"

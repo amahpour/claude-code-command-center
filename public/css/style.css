@@ -429,7 +429,7 @@ body {
   border-radius: var(--radius);
   border-left: 2px solid var(--accent);
   font-size: 11px;
-  max-height: 200px;
+  max-height: 380px;
   overflow-y: auto;
 }
 

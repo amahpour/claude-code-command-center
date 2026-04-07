@@ -107,6 +107,7 @@ const App = {
       document.getElementById('jira-keys').value = keys.join(', ');
       document.getElementById('jira-url').value = this.settings.jira_server_url || '';
       document.getElementById('summary-interval').value = this.settings.summary_interval || 5;
+      document.getElementById('expanded-tile-items').value = this.settings.expanded_tile_items || 5;
       indicator.textContent = '';
       indicator.className = 'save-indicator';
       modal.style.display = 'flex';
@@ -134,6 +135,7 @@ const App = {
       const keys = keysRaw.split(',').map(k => k.trim().toUpperCase()).filter(Boolean);
       const url = document.getElementById('jira-url').value.trim();
       const summaryInterval = parseInt(document.getElementById('summary-interval').value, 10) || 5;
+      const expandedTileItems = parseInt(document.getElementById('expanded-tile-items').value, 10) || 5;
       try {
         const resp = await fetch('/api/settings', {
           method: 'PUT',
@@ -142,13 +144,13 @@ const App = {
             jira_project_keys: keys,
             jira_server_url: url || null,
             summary_interval: summaryInterval,
+            expanded_tile_items: expandedTileItems,
           }),
         });
         const data = await resp.json();
         this.settings = data.settings || {};
-        indicator.textContent = 'Settings saved';
-        indicator.className = 'save-indicator saved';
-        setTimeout(() => { indicator.textContent = ''; indicator.className = 'save-indicator'; }, 2000);
+        closeModal();
+        Dashboard.render(this.sessions);
       } catch (e) {
         console.error('Failed to save settings:', e);
         indicator.textContent = 'Failed to save';

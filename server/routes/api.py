@@ -41,6 +41,7 @@ class SettingsUpdate(BaseModel):
     jira_project_keys: list[str] | None = None
     jira_server_url: str | None = None
     summary_interval: int | None = None
+    expanded_tile_items: int | None = None
 
 
 _UNSET = object()
@@ -163,6 +164,10 @@ async def update_settings(req: SettingsUpdate):
         if req.summary_interval < 1:
             raise HTTPException(status_code=400, detail="summary_interval must be >= 1")
         await db.set_setting("summary_interval", json.dumps(req.summary_interval))
+    if req.expanded_tile_items is not None:
+        if req.expanded_tile_items < 1:
+            raise HTTPException(status_code=400, detail="expanded_tile_items must be >= 1")
+        await db.set_setting("expanded_tile_items", json.dumps(req.expanded_tile_items))
     return await get_settings()
 
 

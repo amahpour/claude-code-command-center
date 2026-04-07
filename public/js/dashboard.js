@@ -430,7 +430,8 @@ const Dashboard = {
     const container = document.getElementById(`expanded-preview-${sessionId}`);
     if (!container) return;
     try {
-      const resp = await fetch(`/api/sessions/${sessionId}/transcript?limit=5`);
+      const limit = (App.settings && App.settings.expanded_tile_items) || 5;
+      const resp = await fetch(`/api/sessions/${sessionId}/transcript?limit=${limit}`);
       const data = await resp.json();
       const msgs = data.transcripts || [];
       if (msgs.length === 0) {

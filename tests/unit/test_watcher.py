@@ -2126,3 +2126,131 @@ def test_stop_watcher_cleans_up_summary_tasks():
     mock_summary.cancel.assert_called_once()
     assert len(watcher_mod._summary_tasks) == 0
     assert len(watcher_mod._user_message_counts) == 0
+
+
+# --- Additional coverage tests ---
+
+
+def test_extract_activity_preview_tool_no_summary():
+    """Tool match with empty summary should return just the verb."""
+    entry = {
+        "role": "assistant",
+        "content": "[Tool: Read]\n",
+    }
+    result = _extract_activity_preview([entry])
+    assert result == "Reading"
+
+
+def test_extract_activity_preview_tool_no_summary_whitespace():
+    """Tool match with whitespace-only summary should return just the verb."""
+    entry = {
+        "role": "assistant",
+        "content": "[Tool: Grep]\n   \n",
+    }
+    result = _extract_activity_preview([entry])
+    assert result == "Searching"
+
+
+async def test_process_file_subagent_keeps_parent_alive():
+    """Subagent activity should revive a stale parent session."""
+    from datetime import UTC, datetime
+
+    # Create parent in stale state
+    await db.create_session("parent-alive-1")
+    await db.update_session("parent-alive-1", status="stale")
+
+    # Create subagent linked to parent
+    await db.create_session("sub-alive-1")
+    await db.update_session("sub-alive-1", parent_session_id="parent-alive-1", status="working")
+
+    # Create a JSONL file at a subagent path
+    parent_dir = tempfile.mkdtemp()
+    subagent_dir = os.path.join(parent_dir, "parent-alive-1", "subagents")
+    os.makedirs(subagent_dir)
+    jsonl_path = os.path.join(subagent_dir, "sub-alive-1.jsonl")
+    with open(jsonl_path, "w") as f:
+        f.write(
+            json.dumps(
+                {
+                    "type": "assistant",
+                    "message": {
+                        "role": "assistant",
+                        "content": "[Tool: Read]\n/some/file.py",
+                    },
+                    "timestamp": datetime.now(UTC).isoformat(),
+                }
+            )
+            + "\n"
+        )
+
+    try:
+        with patch("server.routes.ws.broadcast_session_update", new_callable=AsyncMock):
+            await _process_file_changes(jsonl_path)
+
+        parent = await db.get_session("parent-alive-1")
+        assert parent["status"] == "working"
+    finally:
+        import shutil
+
+        shutil.rmtree(parent_dir)
+
+
+async def test_process_file_revives_stale_session_without_tools():
+    """A stale session receiving non-tool entries should revive to idle."""
+    with tempfile.NamedTemporaryFile(mode="w", suffix=".jsonl", delete=False, dir=tempfile.gettempdir()) as f:
+        f.write(
+            json.dumps(
+                {
+                    "type": "assistant",
+                    "message": {"role": "assistant", "content": "Let me help you with that."},
+                    "timestamp": "2026-03-30T12:00:00Z",
+                }
+            )
+            + "\n"
+        )
+        tmp_path = f.name
+
+    session_id = os.path.splitext(os.path.basename(tmp_path))[0]
+    await db.create_session(session_id)
+    await db.update_session(session_id, status="stale")
+
+    try:
+        with patch("server.routes.ws.broadcast_session_update", new_callable=AsyncMock):
+            await _process_file_changes(tmp_path)
+
+        session = await db.get_session(session_id)
+        assert session["status"] == "idle"
+    finally:
+        os.unlink(tmp_path)
+
+
+async def test_process_file_new_subagent_creates_with_parent():
+    """When a JSONL file exists at a subagent path but no session exists yet, it should be created with parent."""
+    parent_dir = tempfile.mkdtemp()
+    subagent_dir = os.path.join(parent_dir, "parent-new-sub", "subagents")
+    os.makedirs(subagent_dir)
+    jsonl_path = os.path.join(subagent_dir, "new-sub-1.jsonl")
+    with open(jsonl_path, "w") as f:
+        f.write(
+            json.dumps(
+                {
+                    "type": "assistant",
+                    "message": {"role": "assistant", "content": "Working on subtask"},
+                    "timestamp": "2026-03-30T12:00:00Z",
+                }
+            )
+            + "\n"
+        )
+
+    try:
+        with patch("server.routes.ws.broadcast_session_update", new_callable=AsyncMock):
+            await _process_file_changes(jsonl_path)
+
+        session = await db.get_session("new-sub-1")
+        assert session is not None
+        assert session["parent_session_id"] == "parent-new-sub"
+        assert session["status"] == "working"
+    finally:
+        import shutil
+
+        shutil.rmtree(parent_dir)
