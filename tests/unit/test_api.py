@@ -224,6 +224,32 @@ async def test_update_settings_summary_interval_negative(client: AsyncClient):
     assert resp.status_code == 400
 
 
+async def test_update_settings_expanded_tile_items(client: AsyncClient):
+    resp = await client.put(
+        "/api/settings",
+        json={"expanded_tile_items": 15},
+    )
+    assert resp.status_code == 200
+    settings = resp.json()["settings"]
+    assert settings["expanded_tile_items"] == 15
+
+
+async def test_update_settings_expanded_tile_items_invalid(client: AsyncClient):
+    resp = await client.put(
+        "/api/settings",
+        json={"expanded_tile_items": 0},
+    )
+    assert resp.status_code == 400
+
+
+async def test_update_settings_expanded_tile_items_negative(client: AsyncClient):
+    resp = await client.put(
+        "/api/settings",
+        json={"expanded_tile_items": -1},
+    )
+    assert resp.status_code == 400
+
+
 async def test_get_settings_with_values(client: AsyncClient):
     await db.set_setting("jira_project_keys", '["PROJ"]')
     await db.set_setting("plain_key", "not-json")
