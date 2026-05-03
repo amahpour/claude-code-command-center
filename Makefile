@@ -1,5 +1,5 @@
 .DEFAULT_GOAL := help
-PORT := 3000
+PORT := 3010
 # Prefer project .venv via uv so `make up` works without `source .venv/bin/activate`
 UV_RUN := uv run
 
@@ -16,7 +16,7 @@ setup install: ## Full local setup: uv venv + dev deps, Playwright Chromium, Cla
 	@echo "Setup complete. Start the app:  make up"
 	@echo "If Playwright/e2e fails (missing OS libs), run:  uv run python -m playwright install --with-deps chromium"
 
-up: ## Start the server (port 3000; override with PORT=3001)
+up: ## Start the server (port 3010; override with PORT=3011)
 	$(UV_RUN) uvicorn server.main:app --port $(PORT) --reload
 
 down: ## Stop the server

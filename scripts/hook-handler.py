@@ -10,7 +10,7 @@ import sys
 import urllib.error
 import urllib.request
 
-SERVER_URL = "http://localhost:3000/api/hooks"
+SERVER_URL = "http://localhost:3010/api/hooks"
 TIMEOUT = 5
 
 
